@@ -3511,8 +3511,22 @@ spv::Id SpirvShaderTranslator::LoadOperandStorage(const InstructionOperand& oper
       vec4_pointer = builder_->createAccessChain(spv::StorageClassFunction, var_main_registers_,
                                                  id_vector_temp_util_);
       break;
-    case InstructionStorageSource::kConstantFloat:
+    case InstructionStorageSource::kConstantFloat: {
       assert_true(uniform_float_constants_ != spv::NoResult);
+      // Relative addressing can go past the 256 constants (see the DXBC translator): such
+      // reads return whatever follows in the buffer. Clamp the index for the load and
+      // return 0 for any index outside [0, 255] (unsigned compare also rejects negatives).
+      spv::Id in_range = spv::NoResult;
+      if (operand.storage_addressing_mode != InstructionStorageAddressingMode::kAbsolute) {
+        spv::Id index_uint = builder_->createUnaryOp(spv::OpBitcast, type_uint_, index);
+        spv::Id const_uint_255 = builder_->makeUintConstant(255);
+        in_range = builder_->createBinOp(spv::OpULessThanEqual, type_bool_, index_uint,
+                                         const_uint_255);
+        index = builder_->createUnaryOp(
+            spv::OpBitcast, type_int_,
+            builder_->createTriOp(spv::OpSelect, type_uint_, in_range, index_uint,
+                                  const_uint_255));
+      }
       id_vector_temp_util_.clear();
       // The first and the only structure member.
       id_vector_temp_util_.push_back(const_int_0_);
@@ -3520,7 +3534,14 @@ spv::Id SpirvShaderTranslator::LoadOperandStorage(const InstructionOperand& oper
       id_vector_temp_util_.push_back(index);
       vec4_pointer = builder_->createAccessChain(spv::StorageClassUniform, uniform_float_constants_,
                                                  id_vector_temp_util_);
-      break;
+      if (in_range != spv::NoResult) {
+        spv::Id value = builder_->createLoad(vec4_pointer, spv::NoPrecision);
+        // Vector condition for OpSelect, valid in every SPIR-V version.
+        spv::Id in_range_vec = builder_->smearScalar(spv::NoPrecision, in_range, type_bool4_);
+        return builder_->createTriOp(spv::OpSelect, type_float4_, in_range_vec, value,
+                                     const_float4_0_);
+      }
+    } break;
     default:
       assert_unhandled_case(operand.storage_source);
   }
