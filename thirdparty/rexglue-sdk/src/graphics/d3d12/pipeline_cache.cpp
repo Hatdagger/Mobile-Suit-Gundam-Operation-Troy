@@ -61,6 +61,10 @@ REXCVAR_DEFINE_INT32(d3d12_pipeline_creation_threads, -1, "GPU/D3D12",
 
 REXCVAR_DEFINE_BOOL(d3d12_tessellation_wireframe, false, "GPU/D3D12",
                     "Render tessellation as wireframe");
+REXCVAR_DEFINE_BOOL(d3d12_depth_clip, true, "GPU/D3D12",
+                    "Clip geometry at the near and far depth planes when the guest enables "
+                    "clipping. false clamps depth instead (experiment for stencil shadow "
+                    "volumes extruded to infinity).");
 
 namespace rex::graphics::d3d12 {
 
@@ -1428,7 +1432,8 @@ bool PipelineCache::GetCurrentStateDescription(
   if (tessellated && REXCVAR_GET(d3d12_tessellation_wireframe)) {
     description_out.fill_mode_wireframe = 1;
   }
-  description_out.depth_clip = !regs.Get<reg::PA_CL_CLIP_CNTL>().clip_disable;
+  description_out.depth_clip =
+      REXCVAR_GET(d3d12_depth_clip) && !regs.Get<reg::PA_CL_CLIP_CNTL>().clip_disable;
   bool depth_stencil_bound_and_used = false;
   if (!edram_rov_used) {
     // Depth/stencil. No stencil, always passing depth test and no depth writing
