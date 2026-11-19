@@ -1344,11 +1344,41 @@ dxbc::Src DxbcShaderTranslator::LoadOperand(const InstructionOperand& operand,
           return dxbc::Src::LF(0.0f);
         }
         index.index_ = float_constant_index;
+        src = dxbc::Src::CB(cbuffer_index_float_constants_,
+                            uint32_t(CbufferRegister::kFloatConstants), index);
       } else {
         assert_true(constant_register_map.float_dynamic_addressing);
+        // Relative addressing can go past the 256 vertex (or pixel) shader constants: the
+        // address register is clamped to [-256, 255] and the instruction adds its own base.
+        // The constants are a root CBV without bounds checking, so such a read returned
+        // whatever followed in the upload buffer (changing every frame). On the Xbox 360 the
+        // read lands in unused constant storage. Return 0 for any index outside [0, 255].
+        // Operation Troy's tree leaves use leafAngleMatrices[255] for some leaves (c236 + a0),
+        // which drew huge flickering black wedges across the sky.
+        uint32_t result_temp = PushSystemTemp();
+        temp_pushed_out = true;
+        uint32_t index_temp = PushSystemTemp();
+        a_.OpIAdd(dxbc::Dest::R(index_temp, 0b0001),
+                  operand.storage_addressing_mode ==
+                          InstructionStorageAddressingMode::kLoopRelative
+                      ? dxbc::Src::R(system_temp_aL_, dxbc::Src::kXXXX)
+                      : dxbc::Src::R(system_temp_ps_pc_p0_a0_, dxbc::Src::kWWWW),
+                  dxbc::Src::LU(operand.storage_index));
+        // Unsigned compare also rejects negative indices.
+        a_.OpULT(dxbc::Dest::R(index_temp, 0b0010),
+                 dxbc::Src::R(index_temp, dxbc::Src::kXXXX), dxbc::Src::LU(256));
+        a_.OpUMin(dxbc::Dest::R(index_temp, 0b0001),
+                  dxbc::Src::R(index_temp, dxbc::Src::kXXXX), dxbc::Src::LU(255));
+        a_.OpMov(dxbc::Dest::R(result_temp),
+                 dxbc::Src::CB(cbuffer_index_float_constants_,
+                               uint32_t(CbufferRegister::kFloatConstants),
+                               dxbc::Index(index_temp, 0)));
+        a_.OpMovC(dxbc::Dest::R(result_temp), dxbc::Src::R(index_temp, dxbc::Src::kYYYY),
+                  dxbc::Src::R(result_temp), dxbc::Src::LF(0.0f));
+        // Release index_temp; result_temp stays pushed for the caller (temp_pushed_out).
+        PopSystemTemp();
+        src = dxbc::Src::R(result_temp);
       }
-      src = dxbc::Src::CB(cbuffer_index_float_constants_,
-                          uint32_t(CbufferRegister::kFloatConstants), index);
     } break;
     default:
       assert_unhandled_case(operand.storage_source);
