@@ -30,6 +30,8 @@ set(REXKERNEL_SOURCES
 
     # Xbox Live replacement (Xenia Web Services client, from Xenia Canary Netplay)
     xam/live/live_api.cpp
+    xam/live/live_identity.cpp
+    xam/live/live_service.cpp
     xam/live/live_settings.cpp
 
     # XBDM subsystem - provides __imp__Xbdm* symbols

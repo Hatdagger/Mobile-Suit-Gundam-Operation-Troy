@@ -9,6 +9,7 @@
  *              See LICENSE file in the project root for full license text.
  */
 
+#include <rex/kernel/xam/live/live_service.h>
 #include <rex/chrono/clock.h>
 #include <rex/cvar.h>
 #include <rex/filesystem/devices/host_path_device.h>
@@ -261,6 +262,9 @@ void Runtime::Shutdown() {
     return;
   }
 
+  // Online play: remove this PC's sessions from the server and stop the connection thread.
+  rex::kernel::xam::live::LiveService::Get().Stop();
+
   if (instance_ == this) {
     instance_ = nullptr;
   }
@@ -384,6 +388,10 @@ system::object_ref<system::XThread> Runtime::PrepareModuleLaunch() {
     REXSYS_ERROR("Runtime::PrepareModuleLaunch: Failed to prepare module");
     return nullptr;
   }
+
+  // Online play: load this PC's network identity and, in online mode, start
+  // connecting to the server in the background before the game runs.
+  rex::kernel::xam::live::LiveService::Get().Start(kernel_state_->title_id(), user_data_root_);
 
   REXSYS_DEBUG("  Module prepared on thread '{}'", thread->name());
   return thread;

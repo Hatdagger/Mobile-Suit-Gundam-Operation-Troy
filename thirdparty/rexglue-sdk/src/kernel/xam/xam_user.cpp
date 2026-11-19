@@ -36,6 +36,11 @@ namespace xam {
 using namespace rex::system;
 using namespace rex::system::xam;
 
+// XUID types (type_mask bits)
+constexpr uint32_t X_USER_XUID_OFFLINE = 0x1;
+constexpr uint32_t X_USER_XUID_ONLINE = 0x2;
+constexpr uint32_t X_USER_XUID_GUEST = 0x4;
+
 i32 XamUserGetXUID_entry(u32 user_index, u32 type_mask, mapped_u64 xuid_ptr) {
   assert_true(type_mask == 1 || type_mask == 2 || type_mask == 3 || type_mask == 4 ||
               type_mask == 7);
@@ -46,16 +51,19 @@ i32 XamUserGetXUID_entry(u32 user_index, u32 type_mask, mapped_u64 xuid_ptr) {
   uint64_t xuid = 0;
   if (user_index < 4) {
     if (user_index == 0) {
+      // Xenia Canary Netplay: online asks for the logon XUID (the online XUID while
+      // signed in to Live), offline for the offline XUID; guests do not exist.
       const auto& user_profile = REX_KERNEL_STATE()->user_profile();
-      auto type = user_profile->type() & type_mask;
-      if (type & (2 | 4)) {
-        // maybe online profile?
+      if (type_mask & X_USER_XUID_ONLINE) {
+        xuid = user_profile->logon_xuid();
+        result = X_E_SUCCESS;
+      } else if (type_mask & X_USER_XUID_OFFLINE) {
         xuid = user_profile->xuid();
         result = X_E_SUCCESS;
-      } else if (type & 1) {
-        // maybe offline profile?
-        xuid = user_profile->xuid();
-        result = X_E_SUCCESS;
+      }
+      if (type_mask == X_USER_XUID_GUEST) {
+        xuid = 0;
+        result = X_E_NO_SUCH_USER;
       }
     }
   } else {
@@ -78,13 +86,17 @@ u32 XamUserGetSigninState_entry(u32 user_index) {
 
 typedef struct {
   rex::be<uint64_t> xuid;
-  rex::be<uint32_t> unk08;  // maybe zero?
+  rex::be<uint32_t> flags;
   rex::be<uint32_t> signin_state;
-  rex::be<uint32_t> unk10;  // ?
-  rex::be<uint32_t> unk14;  // ?
+  rex::be<uint32_t> guest_num;
+  rex::be<uint32_t> sponsor_user_index;
   char name[16];
 } X_USER_SIGNIN_INFO;
 static_assert_size(X_USER_SIGNIN_INFO, 40);
+
+constexpr uint32_t X_USER_GET_SIGNIN_INFO_ONLINE_XUID_ONLY = 0x1;
+constexpr uint32_t X_USER_GET_SIGNIN_INFO_OFFLINE_XUID_ONLY = 0x2;
+constexpr uint32_t X_USER_INFO_FLAG_LIVE_ENABLED = 0x1;
 
 i32 XamUserGetSigninInfo_entry(u32 user_index, u32 flags, ppc_ptr_t<X_USER_SIGNIN_INFO> info) {
   if (!info) {
@@ -96,8 +108,19 @@ i32 XamUserGetSigninInfo_entry(u32 user_index, u32 flags, ppc_ptr_t<X_USER_SIGNI
     return X_E_NO_SUCH_USER;
   }
 
+  // As in Xenia Canary Netplay: the logon XUID by default (online XUID while
+  // signed in to Live), or the one the flags ask for.
   const auto& user_profile = REX_KERNEL_STATE()->user_profile();
-  info->xuid = user_profile->xuid();
+  if (user_profile->live_enabled()) {
+    info->flags = X_USER_INFO_FLAG_LIVE_ENABLED;
+  }
+  info->xuid = user_profile->logon_xuid();
+  if (flags & X_USER_GET_SIGNIN_INFO_OFFLINE_XUID_ONLY) {
+    info->xuid = user_profile->xuid();
+  }
+  if (flags & X_USER_GET_SIGNIN_INFO_ONLINE_XUID_ONLY) {
+    info->xuid = user_profile->online_xuid();
+  }
   info->signin_state = user_profile->signin_state();
   rex::string::copy_truncating(info->name, user_profile->name(), rex::countof(info->name));
   return X_E_SUCCESS;
@@ -156,7 +179,7 @@ uint32_t XamUserReadProfileSettingsEx(uint32_t title_id, uint32_t user_index, ui
     assert_not_null(xuids);
     // TODO(gibbed): allow proper lookup of arbitrary XUIDs
     const auto& user_profile = REX_KERNEL_STATE()->user_profile();
-    assert_true(static_cast<uint64_t>(xuids[0]) == user_profile->xuid());
+    assert_true(user_profile->is_own_xuid(static_cast<uint64_t>(xuids[0])));
     // TODO(gibbed): we assert here, but in case a title passes xuid_count > 1
     // until it's implemented for release builds...
     xuid_count = 1;
@@ -264,7 +287,7 @@ uint32_t XamUserReadProfileSettingsEx(uint32_t title_id, uint32_t user_index, ui
     std::memset(out_setting, 0, sizeof(X_USER_PROFILE_SETTING));
     out_setting->from = !setting || !setting->is_set ? 0 : setting->is_title_specific() ? 2 : 1;
     if (xuids) {
-      out_setting->xuid = user_profile->xuid();
+      out_setting->xuid = static_cast<uint64_t>(xuids[0]);
     } else {
       out_setting->user_index = static_cast<uint32_t>(user_index);
     }
@@ -382,7 +405,17 @@ u32 XamUserCheckPrivilege_entry(u32 user_index, u32 mask, mapped_u32 out_value) 
     }
   }
 
-  // If we deny everything, games should hopefully not try to do stuff.
+  // Signed in to Live: grant the Live privileges (sessions .. add friend), as
+  // Xenia Canary Netplay's UserTracker::CheckUserPrivilege does.
+  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
+  if (user_profile->signed_in_to_live()) {
+    constexpr uint32_t XPRIVILEGE_SESSIONS = 189;
+    constexpr uint32_t XPRIVILEGE_ADD_FRIEND = 255;
+    *out_value = (mask >= XPRIVILEGE_SESSIONS && mask <= XPRIVILEGE_ADD_FRIEND) ? 1 : 0;
+    return X_ERROR_SUCCESS;
+  }
+
+  // Offline: if we deny everything, games should hopefully not try to do stuff.
   *out_value = 0;
   return X_ERROR_SUCCESS;
 }

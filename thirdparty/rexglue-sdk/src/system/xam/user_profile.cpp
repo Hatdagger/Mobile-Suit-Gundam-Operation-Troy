@@ -13,6 +13,7 @@
 
 #include <fmt/format.h>
 
+#include <rex/kernel/xam/live/live_service.h>
 #include <rex/logging.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xam/user_profile.h>
@@ -91,6 +92,26 @@ UserProfile::UserProfile() {
   AddSetting(std::make_unique<BinarySetting>(0x63E83FFE));
   // XPROFILE_TITLE_SPECIFIC3
   AddSetting(std::make_unique<BinarySetting>(0x63E83FFD));
+}
+
+std::string UserProfile::name() const {
+  return rex::kernel::xam::live::LiveService::Get().gamertag();
+}
+
+bool UserProfile::signed_in_to_live() const {
+  return rex::kernel::xam::live::LiveService::Get().SignedInToLive();
+}
+
+uint32_t UserProfile::signin_state() const {
+  return signed_in_to_live() ? 2 : 1;
+}
+
+uint64_t UserProfile::online_xuid() const {
+  return rex::kernel::xam::live::LiveService::Get().identity().online_xuid;
+}
+
+uint64_t UserProfile::logon_xuid() const {
+  return signed_in_to_live() ? online_xuid() : xuid_;
 }
 
 void UserProfile::AddSetting(std::unique_ptr<Setting> setting) {

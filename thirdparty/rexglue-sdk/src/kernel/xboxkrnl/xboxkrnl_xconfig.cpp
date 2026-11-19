@@ -17,6 +17,7 @@
 #include <rex/logging.h>
 #include <rex/hook.h>
 #include <rex/types.h>
+#include <rex/kernel/xam/live/live_service.h>
 #include <rex/system/flags.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/user_module.h>
@@ -27,7 +28,7 @@ namespace rex::kernel::xboxkrnl {
 X_STATUS xeExGetXConfigSetting(uint16_t category, uint16_t setting, void* buffer,
                                uint16_t buffer_size, uint16_t* required_size) {
   uint16_t setting_size = 0;
-  alignas(uint32_t) uint8_t value[4];
+  alignas(uint32_t) uint8_t value[8];
 
   // TODO(benvanik): have real structs here that just get copied from.
   // https://free60project.github.io/wiki/XConfig.html
@@ -36,6 +37,16 @@ X_STATUS xeExGetXConfigSetting(uint16_t category, uint16_t setting, void* buffer
     case 0x0002:
       // XCONFIG_SECURED_CATEGORY
       switch (setting) {
+        case 0x0001: {  // XCONFIG_SECURED_MAC_ADDRESS
+          // The same per-PC MAC the network code reports (live_identity.toml).
+          uint64_t mac = rex::kernel::xam::live::LiveService::Get().identity().mac_address;
+          setting_size = 6;
+          for (int i = 5; i >= 0; --i) {
+            value[i] = static_cast<uint8_t>(mac & 0xFF);
+            mac >>= 8;
+          }
+          break;
+        }
         case 0x0002:  // XCONFIG_SECURED_AV_REGION
           setting_size = 4;
           memory::store_and_swap<uint32_t>(value, 0x00001000);  // USA/Canada

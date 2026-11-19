@@ -89,7 +89,7 @@ struct PlayerInfo {
 };
 
 struct SessionInfo {
-  uint64_t session_id = 0;    // XNKID as a number (top byte 0xAE = online session)
+  uint64_t session_id = 0;    // XNKID as a number (top byte 0x80-0xBF = online session)
   uint64_t host_xuid = 0;
   std::string title;          // create: game name, for the server's session list
   std::string media_id;       // create: "%08X" of the XEX media ID
@@ -214,8 +214,10 @@ class LiveApi {
   std::optional<ArbitrationInfo> GetArbitration(uint64_t session_id);
   // The server only deletes sessions created from the caller's own IP.
   bool DeleteSession(uint64_t session_id);
-  // Deletes all sessions this machine created (by MAC; or by IP when mac_address = 0).
-  bool DeleteMySessions(uint64_t mac_address);
+  // Deletes all sessions this machine created: those with its host address and MAC
+  // (any MAC when mac_address = 0). host_address: the address the sessions were
+  // created with, if it differs from the one the server sees; empty = the server's view.
+  bool DeleteMySessions(uint64_t mac_address, std::string_view host_address = {});
 
   // --- QoS (the small blob a host publishes for players looking at its session)
 

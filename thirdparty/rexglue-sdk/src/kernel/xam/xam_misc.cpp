@@ -237,7 +237,6 @@ REX_EXPORT_STUB(__imp__XNetLogonGetExtendedStatus);
 REX_EXPORT_STUB(__imp__XNetLogonGetFlowToken);
 REX_EXPORT_STUB(__imp__XNetLogonGetLastUPnPStatus);
 REX_EXPORT_STUB(__imp__XNetLogonGetLoggedOnUsers);
-REX_EXPORT_STUB(__imp__XNetLogonGetMachineID);
 REX_EXPORT_STUB(__imp__XNetLogonGetNatType);
 REX_EXPORT_STUB(__imp__XNetLogonGetServiceInfo);
 REX_EXPORT_STUB(__imp__XNetLogonGetServiceNetworkID);

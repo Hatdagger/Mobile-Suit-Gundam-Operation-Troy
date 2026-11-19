@@ -36,6 +36,7 @@ add_executable(optroy_netcheck
     netcheck.cpp
     ${HTTP_SOURCE}
     "${SDK}/src/kernel/xam/live/live_api.cpp"
+    "${SDK}/src/kernel/xam/live/live_identity.cpp"
 )
 target_include_directories(optroy_netcheck PRIVATE "${SDK}/include")
 target_include_directories(optroy_netcheck SYSTEM PRIVATE "${SDK}/thirdparty/rapidjson/include")
@@ -43,7 +44,7 @@ target_compile_definitions(optroy_netcheck PRIVATE RAPIDJSON_HAS_STDSTRING=1)
 target_link_libraries(optroy_netcheck PRIVATE fmt::fmt)
 
 if(WIN32)
-    target_link_libraries(optroy_netcheck PRIVATE winhttp)
+    target_link_libraries(optroy_netcheck PRIVATE winhttp ws2_32)
 else()
     target_link_libraries(optroy_netcheck PRIVATE ${CMAKE_DL_LIBS})
 endif()

@@ -45,7 +45,11 @@ Six parts:
    `api_address`, `upnp`, `log_mask_ips`. Tested without the game by
    [`tools/netcheck`](../tools/netcheck/README.md) against a mock server; GitHub Actions
    ("Netplay") runs that test on Windows and Linux. The game does not use it yet.
-2. Network addresses and Live sign-in.
+2. **Network addresses and Live sign-in — done.** Each PC gets its own network identity
+   (`live_identity.toml` in the saves folder), connects to the server when the game starts,
+   signs the profile in to Live with the `gamertag` setting, and reports real network
+   addresses and QoS data to the game. Only active with `network_mode = "online"` (or
+   `"lan"`); the default stays offline.
 3. Creating, finding and joining matches (needs the game running to its menus).
 4. Port mapping and UPnP.
 5. A small built-in server for LAN play, started from the launcher.

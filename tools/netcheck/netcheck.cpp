@@ -12,9 +12,11 @@
 // [server] defaults to the public Xenia Netplay server. Add --verbose for every request.
 
 #include <rex/kernel/xam/live/live_api.h>
+#include <rex/kernel/xam/live/live_identity.h>
 #include <rex/net/http.h>
 
 #include <cstdio>
+#include <filesystem>
 #include <cstring>
 #include <random>
 #include <string>
@@ -88,6 +90,9 @@ int RunCheck(const std::string& server) {
   }
   const auto ports = api.GetPortMappings();
   Expect(ports.has_value(), "Operation Troy port settings can be read");
+  const uint32_t local = DetectLocalIp(HostFromServerAddress(api.api_address()));
+  std::printf("  Local address used to reach it: %s\n",
+              local ? MaskIp(Ipv4ToString(local)).c_str() : "(unknown)");
   return g_failures ? 1 : 0;
 }
 
@@ -126,6 +131,41 @@ void UnitChecks() {
   Expect(MacFromString("02:aa:bb:cc:00:01") == 0x02AABBCC0001ull, "MAC from text");
   Expect(MachineIdFromMac(0x02AABBCC0001) == 0xFA0002AABBCC0001ull, "machine ID from MAC");
   Expect(MaskIp("203.0.113.42") == "203.0.113.x", "IP masking for logs");
+
+  std::printf("Identity and addresses\n");
+  const Identity made = GenerateIdentity();
+  Expect((made.mac_address >> 24) == 0x7C1E52 && (made.online_xuid >> 48) == 0x9,
+         "new identity: Xbox 360 MAC prefix, online XUID 0009...");
+  const auto parsed = ParseIdentity(FormatIdentity(made));
+  Expect(parsed && parsed->mac_address == made.mac_address &&
+             parsed->online_xuid == made.online_xuid,
+         "identity file text reads back the same");
+  Expect(!ParseIdentity("mac_address = \"12\"\n") && !ParseIdentity(""),
+         "a broken identity file is rejected");
+  const auto dir = std::filesystem::temp_directory_path() / "optroy_netcheck_identity";
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+  const Identity first = LoadOrCreateIdentity(dir);
+  const Identity again = LoadOrCreateIdentity(dir);
+  Expect(std::filesystem::exists(dir / kIdentityFileName) &&
+             first.mac_address == again.mac_address && first.online_xuid == again.online_xuid,
+         "identity is saved once and then stays the same");
+  std::filesystem::remove_all(dir, ec);
+  Expect(SanitizeGamertag("  Amuro Ray the Newtype  ") == "Amuro Ray the N" &&
+             SanitizeGamertag("") == "Player" && SanitizeGamertag("\t\n") == "Player",
+         "gamertag: trimmed, 15 characters at most, \"Player\" if empty");
+  Expect(HostFromServerAddress("https://example.com/") == "example.com" &&
+             HostFromServerAddress("192.168.1.20:36000") == "192.168.1.20" &&
+             HostFromServerAddress("http://10.0.0.5:36000/x") == "10.0.0.5",
+         "host name from a server address");
+  Expect(Ipv4ToString(ParseIpv4("192.168.1.20")) == "192.168.1.20" && !ParseIpv4("1.2.3") &&
+             !ParseIpv4("256.1.1.1") && !ParseIpv4("1.2.3.4x"),
+         "IPv4 text to address and back");
+  Expect(IsLoopbackIp(ParseIpv4("127.0.0.1")) && !IsLoopbackIp(ParseIpv4("192.168.1.1")),
+         "loopback address check");
+  const uint32_t local = DetectLocalIp("1.1.1.1");
+  Expect(local != 0 && !IsLoopbackIp(local),
+         "this PC's local address is found: " + Ipv4ToString(local));
 }
 
 int RunSelftest(const std::string& server) {

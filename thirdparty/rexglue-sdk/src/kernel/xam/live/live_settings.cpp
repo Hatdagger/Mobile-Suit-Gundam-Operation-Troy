@@ -27,6 +27,10 @@ REXCVAR_DEFINE_BOOL(upnp, false, "Live", "Open the game's ports on the router au
 REXCVAR_DEFINE_BOOL(log_mask_ips, true, "Live",
                     "Hide the last part of IP addresses in the log");
 
+REXCVAR_DEFINE_STRING(gamertag, "Player", "Live",
+                      "Your player name, shown to other players (at most 15 characters)")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 namespace rex::kernel::xam::live {
 
 NetworkMode CurrentNetworkMode() {

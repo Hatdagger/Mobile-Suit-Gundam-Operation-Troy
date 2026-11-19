@@ -34,4 +34,28 @@ Changes from the original:
   - Build files: `src/core/CMakeLists.txt` (WinHTTP / dl), `src/kernel/CMakeLists.txt`,
     `thirdparty/CMakeLists.txt` (rapidjson target), `cmake/rexglue_install.cmake`.
 
+- **Online play, part 2** (network addresses and Live sign-in; only active when
+  `network_mode` is `online` or `lan`, so offline play behaves as before):
+  - `include/rex/kernel/xam/live/live_identity.h`, `src/kernel/xam/live/live_identity.cpp`:
+    this PC's network identity (an Xbox 360 MAC address and an online XUID, made once
+    and kept in `live_identity.toml` in the user data folder), the `gamertag` setting's
+    rules, and address helpers.
+  - `include/rex/kernel/xam/live/live_service.h`, `src/kernel/xam/live/live_service.cpp`:
+    started with the game (`src/system/runtime.cpp`); connects to the server in the
+    background, registers the player, retries while the server is down, tells the game
+    when the connection comes or goes, and removes this PC's sessions on exit.
+  - `include/rex/kernel/xam/live/xnet.h`: XNADDR, XNKID, QoS and other network structures
+    (from Xenia Canary Netplay's `xnet.h`).
+  - `src/kernel/xam/xam_net.cpp`: real XNet addresses (`XNetGetTitleXnAddr`,
+    `XNetXnAddrToInAddr`, `XNetInAddrToXnAddr`, `XNetXnAddrToMachineId`,
+    `XNetInAddrToString`), QoS (`XNetQosListen` publishes to the server,
+    `XNetQosLookup` reads from it, `XNetQosServiceLookup`), DNS lookups, keys,
+    `XNetRandom`, link status and a few more former stubs, after Xenia Canary Netplay's
+    `xam_net.cc`.
+  - `src/system/xam/user_profile.cpp`, `include/rex/system/xam/user_profile.h`,
+    `src/kernel/xam/xam_user.cpp`: the profile signs in to Live (state 2) while online,
+    with the online XUID, the gamertag as its name, and the Live privileges. Save data
+    keeps its folder name (`src/system/xam/content_manager.cpp`).
+  - `src/kernel/xboxkrnl/xboxkrnl_xconfig.cpp`: reports the same MAC address.
+
 Any further changes made by this project are listed in the commit history.

@@ -138,6 +138,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(data)
 
+    def query(self, name):
+        from urllib.parse import parse_qs, urlparse
+        values = parse_qs(urlparse(self.path).query).get(name)
+        return values[0] if values else None
+
     def handle_any(self, method):
         path = self.path.split("?")[0].rstrip("/") or "/"
         try:
@@ -174,8 +179,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if parts[:1] == ["DeleteSessions"] and method == "DELETE" and len(parts) <= 2:
             mac = parts[1].upper() if len(parts) == 2 and HEX12.match(parts[1]) else None
+            host = self.query("hostAddress") or self.client_ip()
             for key, s in list(STATE.sessions.items()):
-                if s["hostAddress"] == self.client_ip() and (mac is None or s["macAddress"] == mac):
+                if s["hostAddress"] == host and (mac is None or s["macAddress"] == mac):
                     del STATE.sessions[key]
             return 200, None, None, None
 

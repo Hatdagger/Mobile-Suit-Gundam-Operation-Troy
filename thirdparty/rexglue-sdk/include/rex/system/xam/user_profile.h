@@ -216,9 +216,24 @@ class UserProfile {
 
   UserProfile();
 
+  // Offline XUID (also names nothing on disk; saves use content_folder_name()).
   uint64_t xuid() const { return xuid_; }
-  std::string name() const { return name_; }
-  uint32_t signin_state() const { return 1; }
+  // Gamertag: the "gamertag" setting (Live section), "Player" if empty.
+  std::string name() const;
+  // Folder name for this profile's save data. Fixed, so changing the gamertag
+  // does not hide existing saves.
+  std::string content_folder_name() const { return name_; }
+  // 1 = signed in locally, 2 = signed in to Live (online mode, server reachable).
+  uint32_t signin_state() const;
+  bool signed_in_to_live() const;
+  // The profile can use Live (it has an online XUID). Like a Live-enabled Xenia profile.
+  bool live_enabled() const { return true; }
+  // Online XUID (0009...), from <user data>/live_identity.toml.
+  uint64_t online_xuid() const;
+  // Online XUID while signed in to Live, otherwise the offline XUID (Xenia's GetLogonXUID).
+  uint64_t logon_xuid() const;
+  // True for this profile's offline or online XUID.
+  bool is_own_xuid(uint64_t xuid) const { return xuid == xuid_ || xuid == online_xuid(); }
   uint32_t type() const { return 1 | 2; /* local | online profile? */ }
 
   void set_kernel_state(KernelState* ks) { kernel_state_ = ks; }

@@ -694,11 +694,12 @@ bool LiveApi::DeleteSession(uint64_t session_id) {
   return Call("DELETE", SessionPath(session_id)).result.success();
 }
 
-bool LiveApi::DeleteMySessions(uint64_t mac_address) {
-  if (mac_address == 0) {
-    return Call("DELETE", "DeleteSessions").result.success();
+bool LiveApi::DeleteMySessions(uint64_t mac_address, std::string_view host_address) {
+  std::string path = mac_address ? "DeleteSessions/" + MacToString(mac_address) : "DeleteSessions";
+  if (!host_address.empty()) {
+    path += "?hostAddress=" + std::string(host_address);  // XNetController.deleteAllSessions
   }
-  return Call("DELETE", "DeleteSessions/" + MacToString(mac_address)).result.success();
+  return Call("DELETE", path).result.success();
 }
 
 // --- QoS ------------------------------------------------------------------------------
