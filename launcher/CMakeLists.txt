@@ -9,7 +9,7 @@
 # It needs only the SDL3 and Dear ImGui sources from thirdparty/rexglue-sdk/thirdparty.
 
 cmake_minimum_required(VERSION 3.25)
-project(optroy_launcher VERSION 0.1.1 LANGUAGES C CXX)
+project(optroy_launcher VERSION 0.1.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

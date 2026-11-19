@@ -200,7 +200,10 @@ bool SourceReady(const Layout& l) {
 }
 
 bool HelperLibsReady(const Layout& l) {
-  return util::IsFile(l.source_dir / "thirdparty" / "rexglue-sdk" / "thirdparty" / "fmt" / "CMakeLists.txt");
+  const auto libs = l.source_dir / "thirdparty" / "rexglue-sdk" / "thirdparty";
+  // rapidjson came later (online play), so an older copy can have fmt but not rapidjson.
+  return util::IsFile(libs / "fmt" / "CMakeLists.txt") &&
+         util::IsFile(libs / "rapidjson" / "include" / "rapidjson" / "document.h");
 }
 
 std::string SourceVersion(const Layout& l) {

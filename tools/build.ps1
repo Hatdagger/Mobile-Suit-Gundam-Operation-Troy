@@ -51,11 +51,12 @@ Say "=== Gundam Operation Troy recomp build ===" "Cyan"
 Say ("Started " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " in " + $Root)
 
 # --- 1. SDK helper libraries ---------------------------------------------------
-if (-not (Test-Path "thirdparty\rexglue-sdk\thirdparty\fmt\CMakeLists.txt")) {
+if (-not (Test-Path "thirdparty\rexglue-sdk\thirdparty\fmt\CMakeLists.txt") -or
+    -not (Test-Path "thirdparty\rexglue-sdk\thirdparty\rapidjson\include\rapidjson\document.h")) {
     if (-not (Test-Path ".git")) {
         Fail "This folder was not downloaded with git. Get it with: git clone https://github.com/Hatdagger/Mobile-Suit-Gundam-Operation-Troy"
     }
-    Say "Downloading the SDK's helper libraries (first run only, about 400 MB)..." "Cyan"
+    Say "Downloading the SDK's helper libraries (first run, or new ones added; about 400 MB)..." "Cyan"
     Run "git" @("submodule", "update", "--init", "--depth", "1", "--jobs", "8") "Downloading helper libraries"
 }
 
