@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -59,6 +60,8 @@ class DrawDebug {
     uint64_t draws = 0;
     uint64_t bad_draws = 0;
     uint32_t order = 0;
+    // Distinct depth/stencil/cull states seen for this pair (logged once each, max 8).
+    std::vector<std::array<uint32_t, 8>> states;
   };
 
   void ParseSkipList();

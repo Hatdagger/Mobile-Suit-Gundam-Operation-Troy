@@ -257,6 +257,23 @@ bool DrawDebug::OnDraw(const RegisterFile& regs, const Shader& vertex_shader,
           pixel_shader ? pixel_shader->texture_bindings().size() : 0, formats);
     }
     ++info.draws;
+    // Render state, raw register values: depth/stencil control, stencil front/back, cull and
+    // polygon mode, clipping, viewport transform, color write mask, depth buffer format.
+    std::array<uint32_t, 8> state = {
+        regs[XE_GPU_REG_RB_DEPTHCONTROL],  regs[XE_GPU_REG_RB_STENCILREFMASK],
+        regs[XE_GPU_REG_RB_STENCILREFMASK_BF], regs[XE_GPU_REG_PA_SU_SC_MODE_CNTL],
+        regs[XE_GPU_REG_PA_CL_CLIP_CNTL],  regs[XE_GPU_REG_PA_CL_VTE_CNTL],
+        regs[XE_GPU_REG_RB_COLOR_MASK],    regs[XE_GPU_REG_RB_DEPTH_INFO]};
+    if (info.states.size() < 8 &&
+        std::find(info.states.begin(), info.states.end(), state) == info.states.end()) {
+      info.states.push_back(state);
+      REXGPU_INFO(
+          "DrawDebug: state pair #{} VS {:016X} PS {:016X} prim {} depthctl {:08X} stencil "
+          "{:08X} stencil_bf {:08X} mode {:08X} clip {:08X} vte {:08X} colormask {:08X} "
+          "depthinfo {:08X}",
+          info.order, key.vs, key.ps, uint32_t(primitive_type), state[0], state[1], state[2],
+          state[3], state[4], state[5], state[6], state[7]);
+    }
     std::string bad = CheckVertices(regs, vertex_shader, translate);
     if (!bad.empty()) {
       ++info.bad_draws;
