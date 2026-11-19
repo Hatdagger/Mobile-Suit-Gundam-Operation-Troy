@@ -16,7 +16,10 @@
 #endif
 #include <WinSock2.h>
 #include <WS2tcpip.h>
-#include <mstcpip.h>  // SIO_UDP_CONNRESET
+#include <mstcpip.h>
+#ifndef SIO_UDP_CONNRESET  // not in every Windows SDK's headers
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
 #else
 #include <arpa/inet.h>
 #include <cerrno>
