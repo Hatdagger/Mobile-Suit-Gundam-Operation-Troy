@@ -86,3 +86,7 @@
 	path = thirdparty/rexglue-sdk/thirdparty/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
 	shallow = true
+[submodule "thirdparty/rexglue-sdk/thirdparty/rapidjson"]
+	path = thirdparty/rexglue-sdk/thirdparty/rapidjson
+	url = https://github.com/Tencent/rapidjson.git
+	shallow = true

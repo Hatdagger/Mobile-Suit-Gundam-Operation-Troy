@@ -17,4 +17,21 @@ Changes from the original:
   game project can build against the SDK source tree (public SDK headers include
   `<imgui.h>`; the installed SDK package ships it, the source tree did not).
 
+- **Online play, part 1** (the Xbox Live replacement's foundation; nothing calls it yet):
+  - `include/rex/net/http.h`, `src/core/http_win.cpp`, `src/core/http_curl.cpp`: a small
+    HTTP/HTTPS client. Windows uses WinHTTP; Linux and macOS load the system libcurl at
+    run time (no build dependency).
+  - `include/rex/kernel/xam/live/live_api.h`, `src/kernel/xam/live/live_api.cpp`: a client
+    for Xenia Web Services servers, ported from Xenia Canary Netplay's `XLiveAPI`
+    ([AdrianCassar/xenia-canary](https://github.com/AdrianCassar/xenia-canary), branch
+    `netplay_canary_experimental`, commit `6342e12`, BSD licence): who-am-I, players,
+    sessions (create, search, details, join, leave, modify, migrate, arbitration, delete)
+    and QoS, with the same requests as Xenia Netplay.
+  - `include/rex/kernel/xam/live/live_settings.h`, `src/kernel/xam/live/live_settings.cpp`:
+    the settings `network_mode`, `api_address`, `upnp` and `log_mask_ips`.
+  - `thirdparty/rapidjson`: new submodule ([Tencent/rapidjson](https://github.com/Tencent/rapidjson),
+    MIT licence, header-only), used only inside `live_api.cpp`.
+  - Build files: `src/core/CMakeLists.txt` (WinHTTP / dl), `src/kernel/CMakeLists.txt`,
+    `thirdparty/CMakeLists.txt` (rapidjson target), `cmake/rexglue_install.cmake`.
+
 Any further changes made by this project are listed in the commit history.

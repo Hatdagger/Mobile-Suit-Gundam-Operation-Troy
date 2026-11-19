@@ -1,0 +1,98 @@
+# Tests the online-play client (HTTP + Xenia Web Services calls) without the game:
+# builds tools/netcheck on Windows and Linux, runs its self-test against a mock
+# server (tools/netcheck/mock_server.py), and checks that the public Xenia Netplay
+# server can be reached (read only: one "whoami" request).
+# Contains no game code or assets.
+name: Netplay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/netcheck/**"
+      - "thirdparty/rexglue-sdk/include/rex/net/http.h"
+      - "thirdparty/rexglue-sdk/src/core/http_*.cpp"
+      - "thirdparty/rexglue-sdk/include/rex/kernel/xam/live/**"
+      - "thirdparty/rexglue-sdk/src/kernel/xam/live/**"
+      - ".github/workflows/netplay.yml"
+  pull_request:
+    paths:
+      - "tools/netcheck/**"
+      - "thirdparty/rexglue-sdk/src/core/http_*.cpp"
+      - "thirdparty/rexglue-sdk/src/kernel/xam/live/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 (${{ matrix.compiler }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [clang++, cl]   # clang++ is what the game build uses
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get fmt and rapidjson (the only SDK libraries the tool uses)
+        run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/fmt thirdparty/rexglue-sdk/thirdparty/rapidjson
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+          cmake -S tools/netcheck -B out/netcheck -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+
+      - name: Build
+        run: cmake --build out/netcheck
+
+      - name: Self-test against the mock server
+        shell: pwsh
+        run: |
+          $mock = Start-Process python -ArgumentList "tools/netcheck/mock_server.py","--port","36000" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 2
+          out/netcheck/optroy_netcheck.exe selftest http://127.0.0.1:36000
+          $code = $LASTEXITCODE
+          Stop-Process -Id $mock.Id
+          exit $code
+
+      - name: Reach the public server (HTTPS through WinHTTP)
+        continue-on-error: true
+        run: out/netcheck/optroy_netcheck.exe check
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'clang++'
+        with:
+          name: optroy-netcheck-windows-x64
+          path: out/netcheck/optroy_netcheck.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get fmt and rapidjson
+        run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/fmt thirdparty/rexglue-sdk/thirdparty/rapidjson
+
+      - name: Configure and build
+        run: |
+          cmake -S tools/netcheck -B out/netcheck -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
+          cmake --build out/netcheck --parallel
+
+      - name: Self-test against the mock server
+        run: |
+          python3 tools/netcheck/mock_server.py --port 36000 &
+          sleep 2
+          out/netcheck/optroy_netcheck selftest http://127.0.0.1:36000
+
+      - name: Reach the public server (HTTPS through libcurl)
+        continue-on-error: true
+        run: out/netcheck/optroy_netcheck check

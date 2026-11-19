@@ -53,7 +53,8 @@ joining matches) with an open replacement, based on the work of
 
 - [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) by Tom (crack) and contributors — the recompilation toolkit (vendored in `thirdparty/rexglue-sdk`, from [Sirhalo23/rexglue-sdk](https://github.com/Sirhalo23/rexglue-sdk), v0.10.0).
 - [Xenia](https://github.com/xenia-project/xenia) — the Xbox 360 emulator ReXGlue is built on.
-- [Xenia Canary Netplay](https://github.com/AdrianCassar/xenia-canary) and [Xenia Web Services](https://github.com/AdrianCassar/Xenia-WebServices) by Adrian Cassar and contributors — the Xbox Live replacement this project's online play builds on.
+- [Xenia Canary Netplay](https://github.com/AdrianCassar/xenia-canary) and [Xenia Web Services](https://github.com/AdrianCassar/Xenia-WebServices) by Adrian Cassar and contributors — the Xbox Live replacement this project's online play builds on (its server client is ported from Xenia Canary Netplay's `XLiveAPI`, BSD licence).
+- [RapidJSON](https://github.com/Tencent/rapidjson) by Tencent and Milo Yip (MIT licence) — reads and writes the server's JSON.
 
 This project is not affiliated with or endorsed by Bandai Namco, Sunrise, Sotsu, Microsoft or Xbox.
 All trademarks belong to their respective owners.

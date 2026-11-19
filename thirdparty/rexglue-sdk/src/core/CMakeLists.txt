@@ -42,6 +42,7 @@ if(WIN32)
         exception_handler_win.cpp
         filesystem_win.cpp
         fiber_win32.cpp
+        http_win.cpp
         mapped_memory_win.cpp
         math_msvc.cpp
         memory_win.cpp
@@ -64,6 +65,7 @@ elseif(UNIX)
         exception_handler_posix.cpp
         filesystem_posix.cpp
         fiber_posix.cpp
+        http_curl.cpp
         mapped_memory_posix.cpp
         math_gcc.cpp
         memory_posix.cpp
@@ -98,9 +100,13 @@ target_include_directories(rexcore PRIVATE
     ${PROJECT_SOURCE_DIR}/thirdparty/cli11/include
 )
 
-if(APPLE)
+if(WIN32)
+    # WinHTTP: rex::net::HttpSend (online play)
+    target_link_libraries(rexcore PRIVATE winhttp)
+elseif(APPLE)
     target_link_libraries(rexcore PRIVATE pthread)
 elseif(UNIX)
+    # dl: rex::net::HttpSend loads the system libcurl at run time
     target_link_libraries(rexcore PRIVATE pthread rt dl)
 endif()
 

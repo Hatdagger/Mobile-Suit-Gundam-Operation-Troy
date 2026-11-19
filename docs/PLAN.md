@@ -35,6 +35,22 @@
    copy, checks and installs build tools, extracts the game files, builds, plays, and
    holds the settings. Built by GitHub Actions; contains no game code or assets.
 
+## Online play progress
+
+Six parts:
+
+1. **Foundation — done.** An HTTP/HTTPS client (WinHTTP on Windows, the system libcurl
+   on Linux), a client for Xenia Web Services servers ported from Xenia Canary Netplay
+   (`thirdparty/rexglue-sdk/src/kernel/xam/live/`), and the settings `network_mode`,
+   `api_address`, `upnp`, `log_mask_ips`. Tested without the game by
+   [`tools/netcheck`](../tools/netcheck/README.md) against a mock server; GitHub Actions
+   ("Netplay") runs that test on Windows and Linux. The game does not use it yet.
+2. Network addresses and Live sign-in.
+3. Creating, finding and joining matches (needs the game running to its menus).
+4. Port mapping and UPnP.
+5. A small built-in server for LAN play, started from the launcher.
+6. Tests between two PCs, and with Xenia Netplay players.
+
 ## Status of the Xbox Live layer in ReXGlue v0.10.0
 
 - Ordinary network traffic already works (sockets are mapped to the PC's network).

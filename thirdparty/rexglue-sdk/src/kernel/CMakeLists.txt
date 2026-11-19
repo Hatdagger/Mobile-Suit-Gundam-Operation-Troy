@@ -28,6 +28,10 @@ set(REXKERNEL_SOURCES
     xam/apps/xlivebase_app.cpp
     xam/apps/xmp_app.cpp
 
+    # Xbox Live replacement (Xenia Web Services client, from Xenia Canary Netplay)
+    xam/live/live_api.cpp
+    xam/live/live_settings.cpp
+
     # XBDM subsystem - provides __imp__Xbdm* symbols
     xbdm/xbdm_module.cpp
     xbdm/xbdm_misc.cpp
@@ -66,4 +70,4 @@ set(REXKERNEL_SOURCES
 list(TRANSFORM REXKERNEL_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_sources(rexruntime PRIVATE ${REXKERNEL_SOURCES})
 
-target_link_libraries(rexruntime PRIVATE o1heap rexcore rexfilesystem rexui rexaudio rexinput imgui)
+target_link_libraries(rexruntime PRIVATE o1heap rexcore rexfilesystem rexui rexaudio rexinput imgui rapidjson)

@@ -42,6 +42,7 @@ set(REQUIRED_SUBMODULES
     utfcpp
     imgui
     sdl3
+    rapidjson
 )
 
 if(REXGLUE_USE_VULKAN)
@@ -94,6 +95,13 @@ add_library(tomlplusplus INTERFACE)
 target_include_directories(tomlplusplus SYSTEM INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tomlplusplus/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+# rapidjson - JSON parser/writer (header-only, git submodule), used by the
+# Xbox Live replacement (src/kernel/xam/live). Only used inside .cpp files.
+add_library(rapidjson INTERFACE)
+target_include_directories(rapidjson SYSTEM INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/rapidjson/include>)
+target_compile_definitions(rapidjson INTERFACE RAPIDJSON_HAS_STDSTRING=1)
 
 # simde - SIMD Everywhere (header-only, git submodule)
 add_library(simde INTERFACE)
