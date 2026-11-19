@@ -133,8 +133,13 @@ target_include_directories(aes128 PUBLIC
 target_compile_options(aes128 PRIVATE -w)
 
 # libmspack - LZX decompression (only lzxd.c needed for XEX decompression)
-# Uses cabextract version which has all needed headers in one place
-set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/cabextract/mspack")
+# The real sources, not cabextract/mspack: every file there is a git symlink, and
+# a Windows checkout without symlink support turns each one into a one-line text
+# file ("../../libmspack/mspack/lzxd.c") that does not compile.
+set(MSPACK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libmspack/libmspack/mspack")
+if(NOT EXISTS "${MSPACK_DIR}/lzxd.c")
+    message(FATAL_ERROR "libmspack sources are missing at ${MSPACK_DIR}. Run: git submodule update --init thirdparty/rexglue-sdk/thirdparty/libmspack")
+endif()
 add_library(mspack STATIC
     ${MSPACK_DIR}/lzxd.c
 )
