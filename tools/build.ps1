@@ -93,11 +93,46 @@ if (-not $clangDir) {
 }
 $env:Path = "$clangDir;$env:Path"
 
-foreach ($tool in @("cmake", "ninja")) {
-    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        Fail "$tool was not found. In the Visual Studio Installer, add 'C++ CMake tools for Windows' (it includes both cmake and ninja)."
+# CMake: on PATH (Visual Studio's own copy is added by vcvars64), or a standalone install.
+if (-not (Get-Command "cmake" -ErrorAction SilentlyContinue)) {
+    foreach ($dir in @((Join-Path $env:ProgramFiles "CMake\bin"), (Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin"))) {
+        if (Test-Path (Join-Path $dir "cmake.exe")) { $env:Path = "$dir;$env:Path"; break }
     }
 }
+if (-not (Get-Command "cmake" -ErrorAction SilentlyContinue)) {
+    Fail "cmake was not found. In the Visual Studio Installer, add 'C++ CMake tools for Windows', or install CMake from https://cmake.org/download/"
+}
+$cmakeVersion = ((& cmake --version | Select-Object -First 1) -replace "cmake version ", "")
+Say "CMake: $cmakeVersion"
+if ($cmakeVersion -match "^(\d+)\.(\d+)") {
+    if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt 25)) {
+        Fail "CMake $cmakeVersion is too old (3.25 or newer is needed). Install a newer one from https://cmake.org/download/"
+    }
+}
+
+# Ninja: on PATH, Visual Studio's own copy, or a copy downloaded once into out\tools\ninja.
+if (-not (Get-Command "ninja" -ErrorAction SilentlyContinue)) {
+    $ninjaDirs = @((Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja"), (Join-Path $Root "out\tools\ninja"))
+    foreach ($dir in $ninjaDirs) {
+        if (Test-Path (Join-Path $dir "ninja.exe")) { $env:Path = "$dir;$env:Path"; break }
+    }
+}
+if (-not (Get-Command "ninja" -ErrorAction SilentlyContinue)) {
+    Say "Ninja (the build runner) was not found; downloading it once into out\tools\ninja..." "Cyan"
+    $ninjaDir = Join-Path $Root "out\tools\ninja"
+    New-Item -ItemType Directory -Force -Path $ninjaDir | Out-Null
+    $zip = Join-Path $ninjaDir "ninja-win.zip"
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip" -OutFile $zip
+        Expand-Archive -Force -Path $zip -DestinationPath $ninjaDir
+    } catch {
+        Fail "Could not download Ninja ($($_.Exception.Message)). In the Visual Studio Installer, add 'C++ CMake tools for Windows' (it includes ninja)."
+    }
+    $env:Path = "$ninjaDir;$env:Path"
+}
+if (-not (Get-Command "ninja" -ErrorAction SilentlyContinue)) { Fail "ninja was not found." }
+Say ("Ninja: " + (& ninja --version))
 
 # --- 3. Game files from your own copy -------------------------------------------
 $haveCode = Test-Path "game\default.xex"
@@ -128,15 +163,27 @@ if (-not ($haveCode -and $haveData)) {
 
 # --- 4. Convert and compile ------------------------------------------------------
 $preset = "win-amd64-$Config"
+$buildDir = "out\build\$preset"
+$start = Get-Date
 Say ""
 Say "Configuring ($preset)..." "Cyan"
 Run "cmake" @("--preset", $preset) "Configuring the build"
 
+# The converted code only joins the build once CMake has seen it, so convert first,
+# then configure again. Codegen re-runs only when its inputs (game files, hints) change.
 Say ""
-Say "Converting the game's code and compiling. The first build takes a long time (30-90 minutes);" "Cyan"
-Say "later builds only recompile what changed." "Cyan"
-$start = Get-Date
-Run "cmake" @("--build", "out\build\$preset") "Compiling"
+Say "Converting the game's code (builds the converter first; it skips work that is already done)..." "Cyan"
+Run "cmake" @("--build", $buildDir, "--target", "gundam_operation_troy_codegen") "Converting the game's code"
+if (-not (Test-Path "generated\default\sources.cmake")) {
+    Fail "The game's code was not converted (generated\default\sources.cmake is missing)."
+}
+Say ""
+Say "Configuring again with the converted code..." "Cyan"
+Run "cmake" @("--preset", $preset) "Configuring the build with the converted code"
+
+Say ""
+Say "Compiling. The first build takes a long time (30-90 minutes); later builds only recompile what changed." "Cyan"
+Run "cmake" @("--build", $buildDir) "Compiling"
 $minutes = [int]((Get-Date) - $start).TotalMinutes
 
 $exePath = Join-Path $Root "out\build\$preset\gundam_operation_troy.exe"
