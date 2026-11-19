@@ -777,6 +777,7 @@ void App::Play() {
     return;
   }
   if (AskForNameBeforePlay()) return;
+  ApplyGameDefaults();
   std::error_code ec;
   fs::create_directories(layout_.saves_dir, ec);
   proc::Command c;
@@ -792,6 +793,24 @@ void App::Play() {
   // launcher again. A minimized launcher could not reliably bring itself back to the front,
   // so players thought it had closed and started it again.
   Go(Screen::Running);
+}
+
+// Settings this game needs that ReXGlue does not default to. Only added when the line is
+// missing, so a player's own value always wins.
+void App::ApplyGameDefaults() {
+  GameConfig cfg;
+  cfg.Load(layout_.GameConfigPath());
+  bool changed = false;
+  auto add = [&](const char* key, const char* value) {
+    if (cfg.Has(key)) return;
+    cfg.SetString(key, value);
+    changed = true;
+  };
+  // The 3D scene draws nothing (only the HUD) with the default render target path; Xenia's
+  // compatibility list marks this game "requires_render_target_rov_fsi".
+  add("render_target_path_d3d12", "rov");
+  add("render_target_path_vulkan", "fsi");
+  if (changed && !cfg.Save()) Toast("Could not save the game settings file");
 }
 
 // Once, before the first game start: players who never set a name get the chance.

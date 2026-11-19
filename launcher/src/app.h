@@ -129,6 +129,7 @@ class App {
   void ConfirmInstallTools(std::function<void()> then);
   void Play();
   bool AskForNameBeforePlay();
+  void ApplyGameDefaults();
   void PollGame();
   void PickGameFolder();
   void PickGameIso();
