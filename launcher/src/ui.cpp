@@ -297,14 +297,16 @@ void Footer(std::string_view hint, const std::vector<Prompt>& prompts) {
   DrawPrompts(prompts, 1216, 690, 24);
 }
 
+float KeyGlyph(std::string_view key, float x, float cy, float size) {
+  const float w = std::max(size, Measure(Font::Label, size * 0.5f, key).x + size * 0.6f);
+  Chamfer(x, cy - size * 0.5f, w, size, size * 0.18f, col::Rgba(20, 36, 56), col::kTextDim, 1.f);
+  Text(Font::Label, size * 0.5f, x + w * 0.5f, cy - size * 0.33f, col::kText, key, 0.5f);
+  return w;
+}
+
 float ButtonGlyph(Button b, float x, float cy, float size) {
   const float r = size * 0.5f;
-  auto keycap = [&](std::string_view label) {
-    const float w = std::max(size, Measure(Font::Label, size * 0.5f, label).x + size * 0.6f);
-    Chamfer(x, cy - r, w, size, size * 0.18f, col::Rgba(20, 36, 56), col::kTextDim, 1.f);
-    Text(Font::Label, size * 0.5f, x + w * 0.5f, cy - size * 0.33f, col::kText, label, 0.5f);
-    return w;
-  };
+  auto keycap = [&](std::string_view label) { return KeyGlyph(label, x, cy, size); };
   auto face = [&](ImU32 color, std::string_view letter) {
     Circle(x + r, cy, r, col::Rgba(14, 24, 36));
     Circle(x + r, cy, r - 1.f, color, false, 2.f);
@@ -417,10 +419,21 @@ const char* KeyLabel(Button b) {
   }
 }
 
+float KeyWidth(std::string_view key, float size) {
+  return std::max(size, Measure(Font::Label, size * 0.5f, key).x + size * 0.6f);
+}
+
 float GlyphWidth(Button b, float size) {
   const char* key = KeyLabel(b);
-  if (!key) return size;
-  return std::max(size, Measure(Font::Label, size * 0.5f, key).x + size * 0.6f);
+  return key ? KeyWidth(key, size) : size;
+}
+
+// A prompt names its own keyboard key (BACKSPACE, ENTER...) when the screen uses
+// the keyboard differently from the rest of the launcher.
+bool UsesOwnKey(const Prompt& p) { return g_glyphs == Glyphs::Keyboard && !p.key.empty(); }
+
+float PromptGlyphWidth(const Prompt& p, float size) {
+  return UsesOwnKey(p) ? KeyWidth(p.key, size) : GlyphWidth(p.button, size);
 }
 
 float SpacedWidth(Font f, float size, std::string_view text, float spacing) {
@@ -439,15 +452,18 @@ constexpr float kPromptGap = 26.f;
 float PromptsWidth(const std::vector<Prompt>& prompts, float size) {
   float w = 0;
   for (const auto& p : prompts)
-    w += GlyphWidth(p.button, size) + 8.f + SpacedWidth(Font::Label, kPromptLabel, p.label, kPromptSpacing) + kPromptGap;
+    w += PromptGlyphWidth(p, size) + 8.f + SpacedWidth(Font::Label, kPromptLabel, p.label, kPromptSpacing) + kPromptGap;
   return prompts.empty() ? 0.f : w - kPromptGap;
 }
 
 void DrawPrompts(const std::vector<Prompt>& prompts, float right_x, float cy, float size) {
   float x = right_x - PromptsWidth(prompts, size);
   for (const auto& p : prompts) {
-    ButtonGlyph(p.button, x, cy, size);
-    x += GlyphWidth(p.button, size) + 8.f;
+    if (UsesOwnKey(p))
+      KeyGlyph(p.key, x, cy, size);
+    else
+      ButtonGlyph(p.button, x, cy, size);
+    x += PromptGlyphWidth(p, size) + 8.f;
     TextSpaced(Font::Label, kPromptLabel, x, cy - 9.f, col::kTextDim, p.label, kPromptSpacing);
     x += SpacedWidth(Font::Label, kPromptLabel, p.label, kPromptSpacing) + kPromptGap;
   }

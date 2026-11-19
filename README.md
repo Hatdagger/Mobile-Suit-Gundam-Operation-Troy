@@ -13,6 +13,9 @@ over the internet and on a local network (LAN).
 This repository contains **no game code and no game assets**, and never will.
 To build and play, you need your own copy of *Gundam Operation Troy* (Xbox 360),
 as a disc image (`.iso`) or a Games on Demand (GOD) folder dumped from your own disc.
+The original Japanese game and the fan
+[English patch](https://github.com/Eight-Mansions/MSGOT) both work: the patch only changes
+menu files, not the game's code, so both build the same PC version.
 
 Do not open issues or pull requests that contain game files, and do not ask for them.
 

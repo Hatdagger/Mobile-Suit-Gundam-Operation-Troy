@@ -20,7 +20,7 @@ const char* kRowTitles[] = {"GAME COPY", "BUILD TOOLS", "RECOMP SOURCE", "GAME F
 
 const char* kRowInfo[] = {
     "Your own copy of Gundam Operation Troy: a Games on Demand (GOD) folder, or an Xbox 360 disc image (.iso). "
-    "It is only read, never changed.",
+    "The original Japanese game and the English patch both work. It is only read, never changed.",
     "The game's code is converted and compiled on this PC with Microsoft's free Build Tools (C++ and clang), "
     "CMake and Ninja.",
     "The recomp's own code (the ReXGlue SDK and this project), downloaded from GitHub. It contains no game code "
@@ -35,7 +35,32 @@ struct SettingRow {
   int current = 0;
   std::function<void(int)> set;
   std::function<void()> action;
+  std::string value;  // shown beside an action
 };
+
+// The on-screen keyboard: three rows of characters, then CAPS / SPACE / DELETE / DONE.
+constexpr int kNameCols = 13;
+constexpr int kNameRows = 4;
+const char kNameChars[3][kNameCols + 1] = {"ABCDEFGHIJKLM", "NOPQRSTUVWXYZ", "1234567890-_."};
+
+struct NameSpecialKey {
+  int col0, cols;
+  const char* label;
+  Button button;
+};
+enum { kKeyCaps, kKeySpace, kKeyDelete, kKeyDone, kSpecialCount };
+const NameSpecialKey kNameSpecial[kSpecialCount] = {
+    {0, 2, "CAPS", Button::PrevTab},
+    {2, 5, "SPACE", Button::Alt},
+    {7, 3, "DELETE", Button::Extra},
+    {10, 3, "DONE", Button::Start},
+};
+
+int SpecialAt(int col) {
+  for (int i = 0; i < kSpecialCount; ++i)
+    if (col >= kNameSpecial[i].col0 && col < kNameSpecial[i].col0 + kNameSpecial[i].cols) return i;
+  return kKeyDone;
+}
 
 }  // namespace
 
@@ -52,7 +77,8 @@ std::vector<App::MenuItem> App::MainItems() {
                  [this] { Go(Screen::Setup); }});
   v.push_back({"ONLINE", "Online and LAN play are being rebuilt for the PC version. Coming in a later update.",
                false, nullptr});
-  v.push_back({"SETTINGS", "Display options for the game, and launcher options.", true, [this] { Go(Screen::Settings); }});
+  v.push_back({"SETTINGS", "Display options, your player name, and launcher options.", true,
+               [this] { Go(Screen::Settings); }});
   v.push_back({"UPDATE",
                source_ready_ ? "Get the newest version of the recomp and rebuild it." : "Available after setup.",
                source_ready_, [this] { RunUpdate(); }});
@@ -125,11 +151,15 @@ void App::DrawMain(float dt) {
                                 : "Not downloaded yet",
                   source_ready_ ? c::kText : c::kWarn});
   rows.push_back({"SAVES", util::ShortenPath(util::PathStr(layout_.saves_dir), 58), c::kText});
+  rows.push_back({"PLAYER NAME",
+                  player_name_set_ ? player_name_
+                                   : std::string(player_name::kDefault) + "  (change it in SETTINGS, PLAYER)",
+                  player_name_set_ ? c::kText : c::kTextDim});
   for (size_t i = 0; i < rows.size(); ++i) {
-    const float ry = py + 26 + float(i) * 60;
+    const float ry = py + 24 + float(i) * 52;
     ui::TextSpaced(Font::Label, 12, px + 28, ry, c::kTextFaint, rows[i].label, 2.f);
-    ui::Text(Font::Body, 18, px + 28, ry + 18, rows[i].color, ui::Fit(Font::Body, 18, rows[i].value, pw - 56));
-    if (i + 1 < rows.size()) ui::Line(px + 28, ry + 50, px + pw - 28, ry + 50, ui::WithAlpha(c::kPanelEdge, 0.6f));
+    ui::Text(Font::Body, 18, px + 28, ry + 17, rows[i].color, ui::Fit(Font::Body, 18, rows[i].value, pw - 56));
+    if (i + 1 < rows.size()) ui::Line(px + 28, ry + 45, px + pw - 28, ry + 45, ui::WithAlpha(c::kPanelEdge, 0.6f));
   }
   if (JobRunning()) {
     float p;
@@ -476,7 +506,10 @@ void App::DrawSetup(float dt) {
 
 void App::DrawSettings(float dt) {
   ui::Header("SETTINGS", HeaderStatus(), false);
-  if (Pressed(Action::PrevTab) || Pressed(Action::NextTab)) settings_tab_ = 1 - settings_tab_;
+  constexpr int kTabs = 3;  // GAME, PLAYER, LAUNCHER
+  if (Pressed(Action::PrevTab)) settings_tab_ = Wrap(settings_tab_ - 1, kTabs);
+  if (Pressed(Action::NextTab)) settings_tab_ = Wrap(settings_tab_ + 1, kTabs);
+  settings_tab_ = std::clamp(settings_tab_, 0, kTabs - 1);
 
   std::vector<SettingRow> rows;
   if (settings_tab_ == 0) {
@@ -510,6 +543,12 @@ void App::DrawSettings(float dt) {
     rows.push_back({"Letterbox", "Keeps the game's 16:9 shape on screens of other shapes.", {"ON", "OFF"},
                     g.GetBool("present_letterbox", true) ? 0 : 1,
                     [&g, save](int i) { g.SetBool("present_letterbox", i == 0); save(); }});
+  } else if (settings_tab_ == 1) {
+    rows.push_back({"Player name",
+                    "Your name in the game and in online matches: up to 15 letters, numbers and spaces. "
+                    "Press OK to type it with the controller or the keyboard.",
+                    {}, 0, nullptr, [this] { OpenNameEntry(false); },
+                    player_name_set_ ? player_name_ : std::string(player_name::kDefault) + " (default)"});
   } else {
     rows.push_back({"Launcher fullscreen", "Show this launcher fullscreen (F11 switches too).", {"ON", "OFF"},
                     settings_.GetBool("fullscreen", false) ? 0 : 1, [this](int i) { SetFullscreen(i == 0); }});
@@ -547,11 +586,11 @@ void App::DrawSettings(float dt) {
   if (Pressed(Action::Down)) sel = Wrap(sel + 1, n);
 
   // Tabs
-  const char* tabs[] = {"GAME", "LAUNCHER"};
+  const char* tabs[kTabs] = {"GAME", "PLAYER", "LAUNCHER"};
   const float tx = 108, ty = 122;
   ui::ButtonGlyph(Button::PrevTab, 64, ty + 20, 26);
   float tab_x = tx;
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < kTabs; ++i) {
     const bool on = i == settings_tab_;
     const float tw = 170;
     ui::Chamfer(tab_x, ty, tw, 40, 8, on ? c::Rgba(18, 70, 104, 235) : c::Rgba(10, 24, 40, 200),
@@ -594,6 +633,9 @@ void App::DrawSettings(float dt) {
         ui::Triangle(right - 22 - vw - 16, ry + 27, 12, 2, c::kAccent);
       }
     } else {
+      if (!r.value.empty())
+        ui::Text(Font::Heading, 19, right - 22, ry + 15, on ? c::kAccent : c::kText,
+                 ui::Fit(Font::Heading, 19, r.value, w * 0.5f), 1.f);
       ui::Triangle(right - 6, ry + 27, 10, 0, on ? c::kAccent : c::kTextFaint);
     }
     if (i + 1 < n) ui::Line(x + 24, ry + row_h - 3, x + w - 22, ry + row_h - 3, ui::WithAlpha(c::kPanelEdge, 0.5f));
@@ -607,7 +649,7 @@ void App::DrawSettings(float dt) {
   } else if (activate && cur.action) {
     cur.action();
   }
-  if (Pressed(Action::Extra) && settings_tab_ == 1 && sel == 2) PickGameIso();
+  if (Pressed(Action::Extra) && settings_tab_ == 2 && sel == 2) PickGameIso();
 
   // Info panel
   const float ix = 848, iy = 174, iw = 368, ih = 362;
@@ -616,7 +658,7 @@ void App::DrawSettings(float dt) {
   for (char& ch : upper) ch = char(std::toupper(static_cast<unsigned char>(ch)));
   ui::TextSpaced(Font::Heading, 19, ix + 22, iy + 24, c::kAccent, upper, 1.2f);
   ui::TextWrapped(Font::Body, 16, ix + 22, iy + 62, iw - 44, c::kText, cur.description);
-  const char* note = settings_tab_ == 0
+  const char* note = settings_tab_ < 2
                          ? "Saved straight away to gundam_operation_troy.toml beside the game. Changes apply the next "
                            "time the game starts."
                          : "Launcher settings are saved straight away.";
@@ -627,6 +669,227 @@ void App::DrawSettings(float dt) {
                   {Button::PrevTab, "TAB"},
                   {Button::Accept, cur.choices.empty() ? "OK" : "NEXT"},
                   {Button::Back, "BACK"}});
+}
+
+// --- Player name -------------------------------------------------------------------
+
+void App::LoadPlayerName() {
+  GameConfig g;
+  g.Load(layout_.GameConfigPath());
+  player_name_ = g.Has(player_name::kConfigKey)
+                     ? player_name::Clean(g.GetString(player_name::kConfigKey, player_name::kDefault))
+                     : std::string();
+  player_name_set_ = !player_name_.empty();
+  if (!player_name_set_) player_name_ = player_name::kDefault;
+}
+
+void App::OpenNameEntry(bool then_play) {
+  LoadPlayerName();
+  name_text_ = player_name_set_ ? player_name_ : std::string();
+  name_caps_ = name_caps_auto_ = name_text_.empty();
+  name_row_ = name_col_ = 0;
+  name_then_play_ = then_play;
+  name_return_ = screen_ == Screen::Name ? Screen::Main : screen_;
+  Go(Screen::Name);
+}
+
+void App::NameType(char ch) {
+  const std::string next = player_name::Type(name_text_, ch);
+  if (next == name_text_) {
+    if (player_name::Allowed(ch) && name_text_.size() >= player_name::kMaxLength) name_full_flash_ = now_ + 0.6;
+    return;
+  }
+  name_text_ = next;
+  // Like a phone keyboard: the first letter is a capital, then small letters.
+  if (name_caps_auto_ && std::isalpha(static_cast<unsigned char>(ch))) name_caps_ = name_caps_auto_ = false;
+}
+
+void App::NameDelete() {
+  if (!name_text_.empty()) name_text_.pop_back();
+  if (name_text_.empty()) name_caps_ = name_caps_auto_ = true;
+}
+
+void App::NameKey(int row, int col) {
+  if (row < 3) {
+    char ch = kNameChars[row][col];
+    if (!name_caps_) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    NameType(ch);
+    return;
+  }
+  switch (SpecialAt(col)) {
+    case kKeyCaps:
+      name_caps_ = !name_caps_;
+      name_caps_auto_ = false;
+      break;
+    case kKeySpace: NameType(' '); break;
+    case kKeyDelete: NameDelete(); break;
+    default: {
+      if (!SaveName()) break;
+      const bool play = name_then_play_;
+      Go(name_return_);
+      Toast("Player name saved: " + player_name_);
+      if (play) Play();
+      break;
+    }
+  }
+}
+
+bool App::SaveName() {
+  const std::string name = player_name::Clean(name_text_);
+  if (name.empty()) {
+    Toast("Type a name first");
+    return false;
+  }
+  game_config_.Load(layout_.GameConfigPath());  // the game may have changed the file meanwhile
+  game_config_.SetString(player_name::kConfigKey, name);
+  if (!demo_ && !game_config_.Save()) {
+    Toast("Could not save the name");
+    return false;
+  }
+  player_name_ = name;
+  player_name_set_ = true;
+  if (!demo_) {
+    settings_.SetBool("name_asked", true);
+    settings_.Save();
+  }
+  return true;
+}
+
+void App::DrawName(float /*dt*/) {
+  ui::Header("PLAYER NAME", HeaderStatus(), false);
+
+  // Typed on a physical keyboard since the last frame.
+  for (char ch : name_typed_) NameType(ch);
+  name_typed_.clear();
+
+  // Move around the keys. The bottom row has four wide keys; the column is kept so
+  // going up again lands where the player came from.
+  if (Pressed(Action::Up)) name_row_ = Wrap(name_row_ - 1, kNameRows);
+  if (Pressed(Action::Down)) name_row_ = Wrap(name_row_ + 1, kNameRows);
+  if (Pressed(Action::Left) || Pressed(Action::Right)) {
+    const int step = Pressed(Action::Left) ? -1 : 1;
+    if (name_row_ < 3) {
+      name_col_ = Wrap(name_col_ + step, kNameCols);
+    } else {
+      const NameSpecialKey& k = kNameSpecial[Wrap(SpecialAt(name_col_) + step, kSpecialCount)];
+      name_col_ = k.col0 + k.cols / 2;
+    }
+  }
+
+  const float fx = 160, fy = 134, fw = 960, fh = 92;  // name field
+  const float kx = 176, ky = 290, key_w = 64, key_h = 56, pitch_x = 72, pitch_y = 66;
+  auto key_rect = [&](int row, int col, float& x, float& y, float& w) {
+    y = ky + float(row) * pitch_y;
+    if (row < 3) {
+      x = kx + float(col) * pitch_x;
+      w = key_w;
+    } else {
+      const NameSpecialKey& k = kNameSpecial[SpecialAt(col)];
+      x = kx + float(k.col0) * pitch_x;
+      w = float(k.cols) * pitch_x - (pitch_x - key_w);
+    }
+  };
+
+  // Mouse: point at a key to select it, click to press it.
+  bool press = Pressed(Action::Accept);
+  for (int row = 0; row < kNameRows; ++row) {
+    const int count = row < 3 ? kNameCols : kSpecialCount;
+    for (int i = 0; i < count; ++i) {
+      const int col = row < 3 ? i : kNameSpecial[i].col0;
+      float x, y, w;
+      key_rect(row, col, x, y, w);
+      if (!MouseIn(x, y, w, key_h)) continue;
+      if (MouseMoved() || Clicked()) {
+        name_row_ = row;
+        if (row < 3 || SpecialAt(name_col_) != i) name_col_ = row < 3 ? col : col + kNameSpecial[i].cols / 2;
+      }
+      if (Clicked()) press = true;
+    }
+  }
+
+  // Name field
+  ui::Panel(fx, fy, fw, fh, "YOUR NAME");
+  const float tx = fx + 34, ty = fy + 20;
+  float cursor_x = tx;
+  if (name_text_.empty()) {
+    ui::Text(Font::Body, 22, tx + 8, ty + 14, c::kTextFaint, "Type your name");
+  } else {
+    ui::TextSpaced(Font::Title, 40, tx, ty + 2, c::kText, name_text_, 1.f);
+    cursor_x = tx + ui::Measure(Font::Title, 40, name_text_).x + float(name_text_.size() - 1) + 6;
+  }
+  if (demo_ || std::fmod(now_, 1.0) < 0.6) ui::Rect(cursor_x, ty + 8, 3, 44, c::kAccent);
+  char count[16];
+  std::snprintf(count, sizeof count, "%zu / %zu", name_text_.size(), player_name::kMaxLength);
+  ui::Text(Font::Heading, 20, fx + fw - 30, fy + 33, now_ < name_full_flash_ ? c::kBad : c::kTextDim, count, 1.f);
+  ui::Text(Font::Body, 15, fx + 4, fy + fh + 14, c::kTextFaint,
+           "Letters, numbers, spaces and  - _ .   Shown in the game and to other players online.");
+
+  // Keys
+  ui::Panel(fx, ky - 16, fw, float(kNameRows) * pitch_y + 22);
+  for (int row = 0; row < 3; ++row) {
+    for (int col = 0; col < kNameCols; ++col) {
+      float x, y, w;
+      key_rect(row, col, x, y, w);
+      const bool sel = row == name_row_ && col == name_col_;
+      ui::Chamfer(x, y, w, key_h, 8, sel ? c::Rgba(18, 70, 104, 240) : c::Rgba(12, 28, 46, 220),
+                  sel ? c::kAccent : c::kPanelEdge, sel ? 1.5f : 1.f);
+      if (sel) ui::Brackets(x - 4, y - 4, w + 8, key_h + 8, 9, ui::WithAlpha(c::kAccent, 0.75f), 2.f);
+      char label[2] = {kNameChars[row][col], 0};
+      if (!name_caps_) label[0] = char(std::tolower(static_cast<unsigned char>(label[0])));
+      ui::Text(Font::Heading, 26, x + w * 0.5f, y + 11, sel ? c::kText : c::kTextDim, label, 0.5f);
+    }
+  }
+  for (int i = 0; i < kSpecialCount; ++i) {
+    const NameSpecialKey& k = kNameSpecial[i];
+    float x, y, w;
+    key_rect(3, k.col0, x, y, w);
+    const bool sel = name_row_ == 3 && SpecialAt(name_col_) == i;
+    const ImU32 tint = i == kKeyDone ? c::kGood : c::kAccent;
+    ui::Chamfer(x, y, w, key_h, 8, sel ? ui::WithAlpha(ui::Mix(c::Rgba(12, 28, 46), tint, 0.35f), 0.95f)
+                                       : c::Rgba(12, 28, 46, 220),
+                sel ? tint : (i == kKeyDone ? ui::WithAlpha(c::kGood, 0.55f) : c::kPanelEdge), sel ? 1.5f : 1.f);
+    if (sel) ui::Brackets(x - 4, y - 4, w + 8, key_h + 8, 9, ui::WithAlpha(tint, 0.75f), 2.f);
+    const float cy = y + key_h * 0.5f;
+    float label_x = x + w * 0.5f;
+    if (using_gamepad_) {
+      // The button that does the same thing from anywhere on the keyboard.
+      ui::ButtonGlyph(k.button, x + 12, cy, 24);
+      label_x += 14;
+    }
+    if (i == kKeyCaps) ui::Circle(x + w - 16, cy, 4.5f, name_caps_ ? c::kGood : c::kTextFaint);
+    const ImU32 lc = i == kKeyDone ? c::kGood : (sel ? c::kText : c::kTextDim);
+    const float lw = ui::Measure(Font::Heading, 18, k.label).x + 1.5f * float(std::char_traits<char>::length(k.label) - 1);
+    ui::TextSpaced(Font::Heading, 18, label_x - lw * 0.5f, cy - 12, lc, k.label, 1.5f);
+  }
+  ui::TextWrapped(Font::Body, 14, fx + 4, ky + float(kNameRows) * pitch_y + 24, fw - 8, c::kTextFaint,
+                  "Saved to gundam_operation_troy.toml beside the game. The game uses it the next time it starts.");
+
+  // Buttons that work from anywhere on the keyboard.
+  if (press) NameKey(name_row_, name_col_);
+  if (screen_ != Screen::Name) return;  // DONE was pressed
+  if (Pressed(Action::Extra)) NameDelete();
+  if (Pressed(Action::Alt)) NameType(' ');
+  if (Pressed(Action::PrevTab) || Pressed(Action::NextTab)) NameKey(3, kNameSpecial[kKeyCaps].col0);
+  if (Pressed(Action::Start)) {
+    NameKey(3, kNameSpecial[kKeyDone].col0);
+    if (screen_ != Screen::Name) return;
+  }
+  if (Pressed(Action::Back)) {
+    Go(name_return_);
+    return;
+  }
+
+  if (using_gamepad_)
+    ui::Footer("", {{Button::Move, "SELECT"},
+                    {Button::Accept, "TYPE"},
+                    {Button::Extra, "DELETE"},
+                    {Button::Alt, "SPACE"},
+                    {Button::PrevTab, "CAPS"},
+                    {Button::Start, "DONE"},
+                    {Button::Back, "CANCEL"}});
+  else
+    ui::Footer("Type with your keyboard, or click the keys.",
+               {{Button::Start, "SAVE", "ENTER"}, {Button::Extra, "DELETE", "BACKSPACE"}, {Button::Back, "CANCEL", "ESC"}});
 }
 
 // --- Build log ---------------------------------------------------------------------
@@ -757,12 +1020,14 @@ void App::DrawToast() {
 
 // --- Screenshot scenes -------------------------------------------------------------
 
-int App::DemoCount() { return 9; }
+int App::DemoCount() { return 13; }
 
 const char* App::DemoName(int index) {
   static const char* kNames[] = {"01_main_menu",       "02_setup_first_run", "03_setup_building",
                                  "04_settings_game",   "05_settings_launcher", "06_main_first_time",
-                                 "07_build_log",       "08_install_tools",   "09_setup_error"};
+                                 "07_build_log",       "08_install_tools",   "09_setup_error",
+                                 "10_player_name",     "11_player_name_keyboard", "12_settings_player",
+                                 "13_ask_name_first_play"};
   return kNames[std::clamp(index, 0, DemoCount() - 1)];
 }
 
@@ -807,6 +1072,8 @@ void App::LoadDemo(int index) {
   files_bytes_ = 1381000000ull;
   build_ready_ = true;
   built_at_ = util::NowUnix() - 3 * 3600;
+  player_name_ = "Hatdagger";
+  player_name_set_ = true;
   screen_ = Screen::Main;
   main_sel_ = 0;
   setup_sel_ = 0;
@@ -870,12 +1137,14 @@ void App::LoadDemo(int index) {
       break;
     case 4:
       screen_ = Screen::Settings;
-      settings_tab_ = 1;
-      settings_sel_[1] = 1;
+      settings_tab_ = 2;
+      settings_sel_[2] = 1;
       break;
     case 5:
       game_found_ = false;
       files_ready_ = build_ready_ = false;
+      player_name_ = player_name::kDefault;
+      player_name_set_ = false;
       break;
     case 6:
       screen_ = Screen::Log;
@@ -900,6 +1169,31 @@ void App::LoadDemo(int index) {
       last_error_lines_ = {
           "FAILED: CMakeFiles/gundam_operation_troy_recomp.dir/generated/default/gundam_operation_troy_recomp.123.cpp.obj",
           "gundam_operation_troy_recomp.123.cpp(4512,7): error: use of undeclared identifier 'ctx'"};
+      break;
+    case 9:  // typing with a controller
+      screen_ = Screen::Name;
+      name_text_ = "Hatdag";
+      name_caps_ = name_caps_auto_ = false;
+      name_row_ = 0;
+      name_col_ = 6;
+      break;
+    case 10:  // typing with a keyboard
+      using_gamepad_ = false;
+      screen_ = Screen::Name;
+      name_text_ = "";
+      name_caps_ = name_caps_auto_ = true;
+      name_row_ = 3;
+      name_col_ = 11;
+      break;
+    case 11:
+      screen_ = Screen::Settings;
+      settings_tab_ = 1;
+      settings_sel_[1] = 0;
+      break;
+    case 12:  // asked once before the first game start
+      player_name_ = player_name::kDefault;
+      player_name_set_ = false;
+      ShowNameQuestion();
       break;
     default:
       break;

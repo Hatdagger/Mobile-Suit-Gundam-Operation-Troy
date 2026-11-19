@@ -14,6 +14,7 @@
 
 #include "game_config.h"
 #include "game_finder.h"
+#include "player_name.h"
 #include "subprocess.h"
 #include "setup_steps.h"
 #include "toolchain.h"
@@ -51,7 +52,7 @@ class App {
   void LoadDemo(int index);
 
  private:
-  enum class Screen { Main, Setup, Settings, Log, Running };
+  enum class Screen { Main, Setup, Settings, Log, Running, Name };
   enum class Row { Game, Tools, Source, Files, Build, Count };
 
   struct Job {
@@ -123,6 +124,7 @@ class App {
   void RunUpdate();
   void ConfirmInstallTools(std::function<void()> then);
   void Play();
+  bool AskForNameBeforePlay();
   void PollGame();
   void PickGameFolder();
   void PickGameIso();
@@ -142,6 +144,7 @@ class App {
   void DrawSettings(float dt);
   void DrawLog(float dt);
   void DrawRunning(float dt);
+  void DrawName(float dt);
   void DrawDialog(float dt);
   void DrawToast();
   void DrawJobPanel(float x, float y, float w, float h);
@@ -151,6 +154,15 @@ class App {
   void ActivateRow(Row r);
   void StartSourceJob();
   std::string HeaderStatus() const;
+
+  // Player name (app_screens.cpp)
+  void LoadPlayerName();
+  void OpenNameEntry(bool then_play);
+  void ShowNameQuestion();
+  void NameType(char c);
+  void NameDelete();
+  void NameKey(int row, int col);
+  bool SaveName();
 
   LaunchOptions options_;
   SDL_Window* window_ = nullptr;
@@ -173,6 +185,8 @@ class App {
   size_t files_count_ = 0;
   uint64_t files_bytes_ = 0;
   std::string source_version_;
+  std::string player_name_;      // as saved in the game's settings
+  bool player_name_set_ = false;  // false: the game uses its default name
 
   std::thread scan_thread_;
   std::atomic<bool> scan_running_{false};
@@ -195,12 +209,22 @@ class App {
   int main_sel_ = 0;
   int setup_sel_ = 0;
   int settings_tab_ = 0;
-  int settings_sel_[2] = {0, 0};
+  int settings_sel_[3] = {0, 0, 0};
   float anim_main_ = 0, anim_setup_ = 0, anim_settings_ = 0;
   float screen_fade_ = 1.f;
   double log_scroll_ = 0;
   bool log_follow_ = true;
   std::optional<Dialog> dialog_;
+
+  // Player name screen
+  std::string name_text_;
+  std::string name_typed_;  // keyboard text since the last frame
+  Screen name_return_ = Screen::Main;
+  bool name_then_play_ = false;
+  bool name_caps_ = true;
+  bool name_caps_auto_ = true;  // caps was switched on for the first letter only
+  int name_row_ = 0, name_col_ = 0;
+  double name_full_flash_ = 0;
   std::string toast_;
   double toast_until_ = 0;
 

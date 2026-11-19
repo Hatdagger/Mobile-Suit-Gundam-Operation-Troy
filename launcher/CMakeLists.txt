@@ -9,7 +9,7 @@
 # It needs only the SDL3 and Dear ImGui sources from thirdparty/rexglue-sdk/thirdparty.
 
 cmake_minimum_required(VERSION 3.25)
-project(optroy_launcher VERSION 0.1.2 LANGUAGES C CXX)
+project(optroy_launcher VERSION 0.1.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -88,6 +88,7 @@ add_executable(optroy_launcher WIN32
     src/toolchain.cpp
     src/setup_steps.cpp
     src/game_config.cpp
+    src/player_name.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
 set_target_properties(optroy_launcher PROPERTIES OUTPUT_NAME "Operation Troy")
 target_link_libraries(optroy_launcher PRIVATE launcher_imgui SDL3::SDL3-static)
@@ -111,7 +112,8 @@ endif()
 
 if(OPTROY_LAUNCHER_TOOL)
     add_executable(optroy_launcher_tool tests/tool.cpp src/util.cpp src/subprocess.cpp src/gdf.cpp src/game_finder.cpp
-                   src/toolchain.cpp src/setup_steps.cpp "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
+                   src/toolchain.cpp src/setup_steps.cpp src/game_config.cpp src/player_name.cpp
+                   "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
     target_include_directories(optroy_launcher_tool PRIVATE src)
     target_compile_definitions(optroy_launcher_tool PRIVATE OPTROY_REPO_OWNER="Hatdagger"
                                OPTROY_REPO_NAME="Mobile-Suit-Gundam-Operation-Troy")

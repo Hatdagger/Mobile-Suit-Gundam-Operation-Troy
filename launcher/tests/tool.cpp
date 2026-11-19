@@ -3,14 +3,17 @@
 //   optroy_launcher_tool find <folder>...
 //   optroy_launcher_tool run <program> [args...]
 //   optroy_launcher_tool tools
+//   optroy_launcher_tool name <settings .toml> <text>   (types <text> key by key, saves it as the player name)
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 #include <SDL3/SDL.h>
 
+#include "game_config.h"
 #include "game_finder.h"
 #include "gdf.h"
+#include "player_name.h"
 #include "subprocess.h"
 #include "setup_steps.h"
 #include "toolchain.h"
@@ -107,6 +110,21 @@ int main(int argc, char** argv) {
     proc::Env env;
     std::string err;
     std::printf("env=%d %s PATH starts: %.80s\n", toolchain::BuildEnvironment(info, env, err), err.c_str(), env["PATH"].c_str());
+    return 0;
+  }
+  if (cmd == "name" && argc == 4) {
+    std::string typed;
+    for (const char* p = argv[3]; *p; ++p) typed = player_name::Type(typed, *p);
+    const std::string clean = player_name::Clean(typed);
+    std::printf("typed=[%s] clean=[%s]\n", typed.c_str(), clean.c_str());
+    if (clean.empty()) return 1;
+    GameConfig config;
+    config.Load(util::U8Path(argv[2]));
+    config.SetString(player_name::kConfigKey, clean);
+    if (!config.Save()) return 1;
+    GameConfig check;
+    check.Load(util::U8Path(argv[2]));
+    std::printf("read back=[%s]\n", check.GetString(player_name::kConfigKey, player_name::kDefault).c_str());
     return 0;
   }
   return 2;

@@ -18,8 +18,29 @@ it works from your own copy of the game, and the PC version is built on your PC.
 4. **Extracts the game files** from your copy (about 1.4 GB).
 5. **Builds the PC version**: converts the game's code and compiles it. The
    first build takes 30-90 minutes; later builds only recompile what changed.
-6. **Play**, **Settings** (resolution, upscaling, anti-aliasing, V-Sync, ...) and
-   **Update** (gets the newest version and rebuilds).
+6. **Play**, **Settings** (resolution, upscaling, anti-aliasing, V-Sync, your
+   player name, ...) and **Update** (gets the newest version and rebuilds).
+
+Both the original Japanese game and the fan English patch work, as a GOD folder
+or an `.iso` (the patch only changes menu files, not the game's code).
+
+## Player name
+
+Your name in the game and in online matches. Set it in **Settings, PLAYER** (the
+launcher also asks once, before the first game start). It is typed on an
+on-screen keyboard with the controller, or straight on a keyboard:
+
+| Action      | Controller | Keyboard            |
+|-------------|------------|---------------------|
+| Type a key  | A          | type normally       |
+| Delete      | X          | Backspace           |
+| Space       | Y          | Space               |
+| Capitals    | LB / RB    | Shift               |
+| Done (save) | Menu       | Enter               |
+| Cancel      | B          | Esc                 |
+
+Up to 15 letters, numbers, spaces and `- _ .`. It is saved as `gamertag` in
+`gundam_operation_troy.toml`.
 
 ## Where things go
 

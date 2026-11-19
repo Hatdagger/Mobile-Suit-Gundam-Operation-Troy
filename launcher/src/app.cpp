@@ -66,6 +66,7 @@ bool App::Init(SDL_Window* window) {
   if (!exe_dir.has_filename()) exe_dir = exe_dir.parent_path();
   layout_ = DetectLayout(exe_dir);
   first_run_ = !util::IsFile(layout_.settings_path);
+  SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
   settings_.Load(layout_.settings_path);
   if (!options_.screenshot_dir.empty()) {
     demo_ = true;
@@ -86,9 +87,31 @@ void App::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
       RequestQuit();
       break;
+    case SDL_EVENT_TEXT_INPUT:
+      if (screen_ == Screen::Name && !dialog_ && e.text.text) {
+        using_gamepad_ = false;
+        name_typed_ += e.text.text;
+      }
+      break;
     case SDL_EVENT_KEY_DOWN: {
       using_gamepad_ = false;
       const bool first = !e.key.repeat;
+      if (screen_ == Screen::Name && !dialog_) {
+        // Letters, digits and space arrive as text (SDL_EVENT_TEXT_INPUT), so only
+        // the arrows and editing keys are actions here.
+        switch (e.key.key) {
+          case SDLK_UP: Press(Action::Up); break;
+          case SDLK_DOWN: Press(Action::Down); break;
+          case SDLK_LEFT: Press(Action::Left); break;
+          case SDLK_RIGHT: Press(Action::Right); break;
+          case SDLK_RETURN: case SDLK_KP_ENTER: if (first) Press(Action::Start); break;
+          case SDLK_ESCAPE: if (first) Press(Action::Back); break;
+          case SDLK_BACKSPACE: case SDLK_DELETE: Press(Action::Extra); break;
+          case SDLK_F11: if (first) SetFullscreen(!settings_.GetBool("fullscreen", false)); break;
+          default: break;
+        }
+        break;
+      }
       switch (e.key.key) {
         case SDLK_UP: case SDLK_W: Press(Action::Up); break;
         case SDLK_DOWN: case SDLK_S: Press(Action::Down); break;
@@ -241,7 +264,8 @@ void App::Frame(float dt) {
   auto saved = pressed_;
   const bool saved_moved = mouse_moved_, saved_clicked = mouse_clicked_;
   const float saved_wheel = wheel_;
-  if (dialog_) {
+  const bool dialog_before = dialog_.has_value();
+  if (dialog_before) {
     pressed_.fill(false);
     mouse_moved_ = mouse_clicked_ = false;
     wheel_ = 0;
@@ -252,16 +276,24 @@ void App::Frame(float dt) {
     case Screen::Settings: DrawSettings(dt); break;
     case Screen::Log: DrawLog(dt); break;
     case Screen::Running: DrawRunning(dt); break;
+    case Screen::Name: DrawName(dt); break;
   }
   if (screen_fade_ < 1.f) {
     ui::Rect(-200, 104, ui::kCanvasW + 400, 556, ui::WithAlpha(ui::col::Rgba(3, 6, 11), 1.f - screen_fade_));
     screen_fade_ = std::min(1.f, screen_fade_ + dt * 7.f);
   }
   if (dialog_) {
-    pressed_ = saved;
-    mouse_moved_ = saved_moved;
-    mouse_clicked_ = saved_clicked;
-    wheel_ = saved_wheel;
+    if (dialog_before) {
+      pressed_ = saved;
+      mouse_moved_ = saved_moved;
+      mouse_clicked_ = saved_clicked;
+      wheel_ = saved_wheel;
+    } else {
+      // Opened by this frame's press: that press must not also choose a button.
+      pressed_.fill(false);
+      mouse_moved_ = mouse_clicked_ = false;
+      wheel_ = 0;
+    }
     DrawDialog(dt);
   }
   DrawToast();
@@ -277,8 +309,17 @@ void App::Go(Screen s) {
     log_return_ = screen_;
     log_follow_ = true;
   }
-  if (s == Screen::Settings) game_config_.Load(layout_.GameConfigPath());
+  if (s == Screen::Settings || s == Screen::Name) game_config_.Load(layout_.GameConfigPath());
   if (s == Screen::Main || s == Screen::Setup) RefreshState();
+  // Typing on a physical keyboard only while the name screen is open. Our own
+  // on-screen keyboard is used with a controller, so the system's stays hidden.
+  if (!demo_ && window_) {
+    if (s == Screen::Name)
+      SDL_StartTextInput(window_);
+    else if (screen_ == Screen::Name)
+      SDL_StopTextInput(window_);
+  }
+  name_typed_.clear();
   screen_ = s;
   screen_fade_ = demo_ ? 1.f : 0.f;
 }
@@ -396,6 +437,7 @@ void App::RefreshState() {
   files_bytes_ = 0;
   files_ready_ = steps::GameFilesReady(layout_, &files_count_, &files_bytes_);
   build_ready_ = steps::BuildReady(layout_, &built_at_);
+  LoadPlayerName();
   source_version_ = steps::SourceVersion(layout_);
   if (source_version_.empty() && util::IsDir(layout_.source_dir / ".git")) {
     const std::string head = ReadGitHead(layout_.source_dir);
@@ -713,6 +755,7 @@ void App::Play() {
     Go(Screen::Setup);
     return;
   }
+  if (AskForNameBeforePlay()) return;
   std::error_code ec;
   fs::create_directories(layout_.saves_dir, ec);
   proc::Command c;
@@ -726,6 +769,31 @@ void App::Play() {
   }
   Go(Screen::Running);
   SDL_MinimizeWindow(window_);
+}
+
+// Once, before the first game start: players who never set a name get the chance.
+bool App::AskForNameBeforePlay() {
+  LoadPlayerName();
+  if (player_name_set_ || settings_.GetBool("name_asked", false)) return false;
+  settings_.SetBool("name_asked", true);
+  settings_.Save();
+  ShowNameQuestion();
+  return true;
+}
+
+void App::ShowNameQuestion() {
+  Dialog d;
+  d.title = "CHOOSE YOUR PLAYER NAME?";
+  d.message = std::string("You are called \"") + player_name::kDefault +
+              "\" in the game and in online matches. You can change it any time in SETTINGS, PLAYER.";
+  d.options = {"CHOOSE NAME", "PLAY NOW"};
+  d.on_choose = [this](int i) {
+    if (i == 0)
+      OpenNameEntry(true);
+    else
+      Play();
+  };
+  ShowDialog(std::move(d));
 }
 
 void App::PollGame() {

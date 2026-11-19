@@ -40,6 +40,7 @@ enum class Button { Accept, Back, Alt, Extra, PrevTab, NextTab, Start, Move };
 struct Prompt {
   Button button;
   std::string label;
+  std::string key;  // keyboard key shown instead of the usual one while the keyboard is in use
 };
 
 void LoadFonts();  // call once after ImGui::CreateContext()
@@ -78,6 +79,7 @@ void Background();
 void Header(std::string_view section, std::string_view status, bool online);
 void Footer(std::string_view hint, const std::vector<Prompt>& prompts);
 float ButtonGlyph(Button b, float x, float cy, float size);  // returns width used
+float KeyGlyph(std::string_view key, float x, float cy, float size);  // a keyboard key cap; returns width used
 float PromptsWidth(const std::vector<Prompt>& prompts, float size);
 void DrawPrompts(const std::vector<Prompt>& prompts, float right_x, float cy, float size);
 void Panel(float x, float y, float w, float h, std::string_view title = {});
