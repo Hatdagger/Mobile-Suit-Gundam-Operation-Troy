@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -31,6 +32,9 @@ REXCVAR_DEFINE_BOOL(gpu_draw_log, false, "GPU/Debug",
                     "data D3D would read as NaN/infinity");
 REXCVAR_DEFINE_STRING(gpu_draw_skip_shaders, "", "GPU/Debug",
                       "Comma separated shader hashes (16 hex digits) whose draws are skipped");
+REXCVAR_DEFINE_STRING(gpu_draw_dump_vs, "", "GPU/Debug",
+                      "Vertex shader hash (16 hex digits): log its float constants for the first "
+                      "draws that use it");
 REXCVAR_DEFINE_BOOL(gpu_draw_hunt, false, "GPU/Debug",
                     "F9 (or creating logs/hunt_start) skips each shader pair in turn and "
                     "saves a screenshot per step to logs/hunt/");
@@ -281,6 +285,28 @@ bool DrawDebug::OnDraw(const RegisterFile& regs, const Shader& vertex_shader,
       if (n == 1 || n == 10 || n == 100 || n == 1000 || n % 10000 == 0) {
         REXGPU_WARN("DrawDebug: BAD VERTICES pair #{} VS {:016X} PS {:016X} (bad draw {}): {}",
                     info.order, key.vs, key.ps, n, bad);
+      }
+    }
+  }
+
+  if (!REXCVAR_GET(gpu_draw_dump_vs).empty() && dump_count_ < 3) {
+    uint64_t want = std::strtoull(REXCVAR_GET(gpu_draw_dump_vs).c_str(), nullptr, 16);
+    if (want && want == key.vs) {
+      ++dump_count_;
+      REXGPU_INFO("DrawDebug: DUMP {} VS {:016X} PS {:016X} prim {} indices {}", dump_count_,
+                  key.vs, key.ps, uint32_t(primitive_type), index_count);
+      for (uint32_t i = 0; i < 256; ++i) {
+        float v[4];
+        bool any = false, bad = false;
+        for (uint32_t j = 0; j < 4; ++j) {
+          v[j] = regs.Get<float>(XE_GPU_REG_SHADER_CONSTANT_000_X + i * 4 + j);
+          any |= v[j] != 0.0f;
+          bad |= !std::isfinite(v[j]) || std::fabs(v[j]) > 1.0e6f;
+        }
+        if (any) {
+          REXGPU_INFO("DrawDebug: DUMP {} c{:03} {:g} {:g} {:g} {:g}{}", dump_count_, i, v[0], v[1],
+                      v[2], v[3], bad ? " <-- SUSPICIOUS" : "");
+        }
       }
     }
   }
