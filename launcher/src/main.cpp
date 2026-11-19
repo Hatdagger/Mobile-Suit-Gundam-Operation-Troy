@@ -18,7 +18,44 @@
 #include "imgui_impl_sdlrenderer3.h"
 #include "ui.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+// One launcher at a time: a second start brings the running one to the front instead.
+constexpr wchar_t kInstanceMutex[] = L"Local\\OperationTroyLauncher";
+constexpr wchar_t kWindowProp[] = L"OperationTroyLauncher";
+
+BOOL CALLBACK FindLauncherWindow(HWND hwnd, LPARAM out) {
+  if (GetPropW(hwnd, kWindowProp)) {
+    *reinterpret_cast<HWND*>(out) = hwnd;
+    return FALSE;
+  }
+  return TRUE;
+}
+
+// True if another launcher is running (it has been brought to the front).
+bool ActivateRunningLauncher(HANDLE& mutex) {
+  mutex = CreateMutexW(nullptr, FALSE, kInstanceMutex);
+  if (!mutex || GetLastError() != ERROR_ALREADY_EXISTS) return false;
+  HWND other = nullptr;
+  EnumWindows(FindLauncherWindow, reinterpret_cast<LPARAM>(&other));
+  if (other) {
+    if (IsIconic(other)) ShowWindow(other, SW_RESTORE);
+    SetForegroundWindow(other);
+  }
+  return true;
+}
+
+void MarkLauncherWindow(SDL_Window* window) {
+  if (auto hwnd = static_cast<HWND>(
+          SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)))
+    SetPropW(hwnd, kWindowProp, reinterpret_cast<HANDLE>(1));
+}
+#endif
 
 void RenderFrame(SDL_Renderer* renderer, App& app, float dt) {
   ImGui_ImplSDLRenderer3_NewFrame();
@@ -54,6 +91,10 @@ int main(int argc, char** argv) {
       std::sscanf(argv[++i], "%dx%d", &width, &height);
   }
   const bool screenshots = !options.screenshot_dir.empty();
+#ifdef _WIN32
+  HANDLE instance_mutex = nullptr;
+  if (!screenshots && ActivateRunningLauncher(instance_mutex)) return 0;
+#endif
   if (screenshots) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "offscreen");
   SDL_SetAppMetadata("Operation Troy", OPTROY_LAUNCHER_VERSION, "io.github.hatdagger.operationtroy");
 
@@ -69,6 +110,9 @@ int main(int argc, char** argv) {
     return 1;
   }
   SDL_SetWindowMinimumSize(window, 640, 360);
+#ifdef _WIN32
+  MarkLauncherWindow(window);
+#endif
   SDL_Renderer* renderer = SDL_CreateRenderer(window, screenshots ? "software" : nullptr);
   if (!renderer) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Operation Troy", SDL_GetError(), window);
@@ -130,7 +174,8 @@ int main(int argc, char** argv) {
         }
         RenderFrame(renderer, app, dt);
         SDL_RenderPresent(renderer);
-        if (!(flags & SDL_WINDOW_INPUT_FOCUS)) SDL_Delay(25);  // stay light in the background
+        if (!(flags & SDL_WINDOW_INPUT_FOCUS))
+          SDL_Delay(app.GameRunning() ? 200 : 25);  // stay light in the background, lighter while the game runs
       }
     }
   }
@@ -141,5 +186,8 @@ int main(int argc, char** argv) {
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
+#ifdef _WIN32
+  if (instance_mutex) CloseHandle(instance_mutex);
+#endif
   return exit_code;
 }

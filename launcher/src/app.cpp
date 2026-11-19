@@ -7,6 +7,10 @@
 
 #include "imgui.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
 
 constexpr float kRepeatDelay = 0.36f;
@@ -14,6 +18,23 @@ constexpr float kRepeatRate = 0.085f;
 constexpr Sint16 kStickThreshold = 16000;
 
 double NowSeconds() { return double(SDL_GetTicksNS()) / 1e9; }
+
+}  // namespace
+
+// Restores the window and asks Windows to make it the active one.
+void BringToFront(SDL_Window* window) {
+#ifdef _WIN32
+  if (auto hwnd = static_cast<HWND>(
+          SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))) {
+    if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    SetForegroundWindow(hwnd);
+  }
+#else
+  (void)window;
+#endif
+}
+
+namespace {
 
 // Short commit id of a git checkout, read straight from .git (no git needed).
 std::string ReadGitHead(const fs::path& repo) {
@@ -767,8 +788,10 @@ void App::Play() {
     ShowMessage("COULD NOT START THE GAME", err, ui::col::kBad);
     return;
   }
+  // Stay open behind the game (not minimized): when the game closes, Windows activates the
+  // launcher again. A minimized launcher could not reliably bring itself back to the front,
+  // so players thought it had closed and started it again.
   Go(Screen::Running);
-  SDL_MinimizeWindow(window_);
 }
 
 // Once, before the first game start: players who never set a name get the chance.
@@ -800,6 +823,7 @@ void App::PollGame() {
   if (screen_ != Screen::Running || game_process_.Running()) return;
   SDL_RestoreWindow(window_);
   SDL_RaiseWindow(window_);
+  BringToFront(window_);
   Go(Screen::Main);
   if (game_process_.ExitCode() != 0) {
     char code[32];

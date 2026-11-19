@@ -21,6 +21,9 @@
 #include "ui.h"
 #include "util.h"
 
+// Restores the window and asks the system to make it the active one (Windows).
+void BringToFront(SDL_Window* window);
+
 struct LaunchOptions {
   std::string screenshot_dir;  // render the demo screens to image files, then quit
   std::string root;            // act as if the launcher were in this folder
@@ -44,6 +47,7 @@ class App {
   void Tick();  // background polling only (used while the window is minimized)
   void Frame(float dt);
   bool WantsQuit() const { return quit_; }
+  bool GameRunning() const { return screen_ == Screen::Running; }
   void RequestQuit();
 
   // Screenshot mode: fixed example states for every screen.
