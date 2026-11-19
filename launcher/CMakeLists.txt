@@ -123,7 +123,12 @@ if(OPTROY_LAUNCHER_TOOL)
     target_include_directories(optroy_launcher_tool PRIVATE src)
     target_include_directories(optroy_launcher_tool SYSTEM PRIVATE "${OPTROY_THIRDPARTY}/rapidjson/include")
     if(WIN32)
-        target_link_libraries(optroy_launcher_tool PRIVATE ws2_32 iphlpapi)
+        target_compile_definitions(optroy_launcher_tool PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+                                   _CRT_SECURE_NO_WARNINGS)
+        target_link_libraries(optroy_launcher_tool PRIVATE shell32 ole32 ws2_32 iphlpapi)
+    endif()
+    if(MSVC)
+        target_compile_options(optroy_launcher_tool PRIVATE /utf-8)
     endif()
     target_compile_definitions(optroy_launcher_tool PRIVATE OPTROY_REPO_OWNER="Hatdagger"
                                OPTROY_REPO_NAME="Mobile-Suit-Gundam-Operation-Troy")

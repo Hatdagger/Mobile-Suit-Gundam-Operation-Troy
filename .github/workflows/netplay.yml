@@ -14,6 +14,8 @@ on:
       - "thirdparty/rexglue-sdk/src/core/http_*.cpp"
       - "thirdparty/rexglue-sdk/include/rex/kernel/xam/live/**"
       - "thirdparty/rexglue-sdk/src/kernel/xam/live/**"
+      - "thirdparty/rexglue-sdk/include/rex/system/xsocket_native.h"
+      - "thirdparty/rexglue-sdk/src/system/xsocket_native.cpp"
       - ".github/workflows/netplay.yml"
   pull_request:
     paths:
