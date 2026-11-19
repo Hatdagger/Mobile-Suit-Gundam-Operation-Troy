@@ -14,7 +14,7 @@
 
 #include "game_config.h"
 #include "game_finder.h"
-#include "process.h"
+#include "subprocess.h"
 #include "setup_steps.h"
 #include "toolchain.h"
 #include "ui.h"

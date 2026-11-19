@@ -82,7 +82,7 @@ add_executable(optroy_launcher WIN32
     src/app_screens.cpp
     src/ui.cpp
     src/util.cpp
-    src/process.cpp
+    src/subprocess.cpp
     src/gdf.cpp
     src/game_finder.cpp
     src/toolchain.cpp
@@ -90,7 +90,6 @@ add_executable(optroy_launcher WIN32
     src/game_config.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
 set_target_properties(optroy_launcher PROPERTIES OUTPUT_NAME "Operation Troy")
-target_include_directories(optroy_launcher PRIVATE src)
 target_link_libraries(optroy_launcher PRIVATE launcher_imgui SDL3::SDL3-static)
 target_compile_definitions(optroy_launcher PRIVATE
     OPTROY_LAUNCHER_VERSION="${PROJECT_VERSION}"
@@ -111,7 +110,7 @@ else()
 endif()
 
 if(OPTROY_LAUNCHER_TOOL)
-    add_executable(optroy_launcher_tool tests/tool.cpp src/util.cpp src/process.cpp src/gdf.cpp src/game_finder.cpp
+    add_executable(optroy_launcher_tool tests/tool.cpp src/util.cpp src/subprocess.cpp src/gdf.cpp src/game_finder.cpp
                    src/toolchain.cpp src/setup_steps.cpp "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
     target_include_directories(optroy_launcher_tool PRIVATE src)
     target_compile_definitions(optroy_launcher_tool PRIVATE OPTROY_REPO_OWNER="Hatdagger"

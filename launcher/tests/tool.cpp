@@ -11,7 +11,7 @@
 
 #include "game_finder.h"
 #include "gdf.h"
-#include "process.h"
+#include "subprocess.h"
 #include "setup_steps.h"
 #include "toolchain.h"
 
@@ -76,6 +76,27 @@ int main(int argc, char** argv) {
                 util::PathStr(ctx.layout.GameExe()).c_str(), steps::BuildReady(ctx.layout));
     for (size_t i = 0; i < log.Count(); ++i)
       if (log.Range(i, 1)[0].rfind("> ", 0) == 0) std::printf("log: %s\n", log.Range(i, 1)[0].c_str());
+    return ok ? 0 : 1;
+  }
+  if (cmd == "source" && argc == 3) {
+    util::Log log;
+    std::atomic<bool> cancel{false};
+    JobContext ctx;
+    ctx.layout = DetectLayout(util::U8Path(argv[2]));
+    ctx.log = &log;
+    ctx.cancel = &cancel;
+    int last_pct = -1;
+    ctx.stage = [](const std::string& s) { std::printf("stage: %s\n", s.c_str()); };
+    ctx.progress = [&](float p) {
+      const int pct = int(p * 100);
+      if (p >= 0 && pct / 10 != last_pct / 10) std::printf("progress: %d%%\n", pct);
+      last_pct = pct;
+    };
+    auto tools = toolchain::Detect(ctx.layout.tools_dir);
+    const bool ok = steps::GetSource(ctx, tools);
+    std::printf("dev=%d ok=%d error=%s source=%s ready=%d libs=%d\n", ctx.layout.dev, ok, ctx.error.c_str(),
+                util::PathStr(ctx.layout.source_dir).c_str(), steps::SourceReady(ctx.layout),
+                steps::HelperLibsReady(ctx.layout));
     return ok ? 0 : 1;
   }
   if (cmd == "tools") {

@@ -9,7 +9,7 @@
 #include <SDL3/SDL.h>
 
 #include "gdf.h"
-#include "process.h"
+#include "subprocess.h"
 
 namespace {
 
