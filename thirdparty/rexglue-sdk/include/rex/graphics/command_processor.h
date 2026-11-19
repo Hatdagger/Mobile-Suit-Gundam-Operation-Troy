@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <functional>
@@ -247,6 +248,18 @@ class CommandProcessor {
 
   uint32_t primary_buffer_ptr_ = 0;
   uint32_t primary_buffer_size_ = 0;
+
+  // The last packets read (diagnostics for a bad packet; written by the GPU worker thread only).
+  struct PacketTraceEntry {
+    uint32_t buffer_capacity = 0;  // which buffer: the primary ring or an indirect buffer's size
+    uint32_t offset = 0;           // byte offset of the header in that buffer
+    uint32_t header = 0;
+  };
+  static constexpr size_t kPacketTraceSize = 48;
+  std::array<PacketTraceEntry, kPacketTraceSize> packet_trace_{};
+  size_t packet_trace_next_ = 0;
+  void LogBadPacket(const char* where, uint32_t buffer_ptr, uint32_t buffer_size_bytes,
+                    uint32_t batch_start_bytes, uint32_t fail_offset_bytes, uint32_t write_offset_bytes);
 
   uint32_t read_ptr_index_ = 0;
   uint32_t read_ptr_update_freq_ = 0;

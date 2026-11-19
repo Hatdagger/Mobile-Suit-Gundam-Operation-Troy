@@ -620,9 +620,12 @@ uint32_t CommandProcessor::ExecutePrimaryBuffer(uint32_t read_index, uint32_t wr
   reader.set_read_offset(read_index * sizeof(uint32_t));
   reader.set_write_offset(write_index * sizeof(uint32_t));
   do {
+    const uint32_t packet_offset = reader.read_offset();
     if (!ExecutePacket(&reader)) {
       // This probably should be fatal - but we're going to continue anyways.
       REXGPU_ERROR("**** PRIMARY RINGBUFFER: Failed to execute packet.");
+      LogBadPacket("primary ring", primary_buffer_ptr_, primary_buffer_size_,
+                   read_index * sizeof(uint32_t), packet_offset, write_index * sizeof(uint32_t));
       assert_always();
       break;
     }
@@ -640,9 +643,12 @@ void CommandProcessor::ExecuteIndirectBuffer(uint32_t ptr, uint32_t count) {
   memory::RingBuffer reader(memory_->TranslatePhysical(ptr), count * sizeof(uint32_t));
   reader.set_write_offset(count * sizeof(uint32_t));
   do {
+    const uint32_t packet_offset = reader.read_offset();
     if (!ExecutePacket(&reader)) {
       // Return up a level if we encounter a bad packet.
       REXGPU_ERROR("**** INDIRECT RINGBUFFER: Failed to execute packet.");
+      LogBadPacket("indirect buffer", ptr, count * sizeof(uint32_t), 0, packet_offset,
+                   count * sizeof(uint32_t));
       assert_always();
       break;
     }
@@ -662,7 +668,52 @@ void CommandProcessor::ExecutePacket(uint32_t ptr, uint32_t count) {
   } while (reader.read_count());
 }
 
+void CommandProcessor::LogBadPacket(const char* where, uint32_t buffer_ptr, uint32_t buffer_size_bytes,
+                                    uint32_t batch_start_bytes, uint32_t fail_offset_bytes,
+                                    uint32_t write_offset_bytes) {
+  // One-off diagnostics for a packet the command processor could not parse: the packets read
+  // just before it, and the raw dwords of this batch (as the GPU sees them, byte-swapped).
+  REXGPU_ERROR("Bad packet in {} at physical 0x{:08X} (size 0x{:X}): batch 0x{:X}..0x{:X}, failed at 0x{:X}",
+               where, buffer_ptr, buffer_size_bytes, batch_start_bytes, write_offset_bytes, fail_offset_bytes);
+  REXGPU_ERROR("Last packets (oldest first): buffer size / offset / header");
+  for (size_t i = 0; i < kPacketTraceSize; ++i) {
+    const PacketTraceEntry& e = packet_trace_[(packet_trace_next_ + i) % kPacketTraceSize];
+    if (!e.header && !e.offset && !e.buffer_capacity) continue;
+    const uint32_t type = e.header >> 30;
+    if (type == 3)
+      REXGPU_ERROR("  {:08X} {:06X} {:08X}  type3 op=0x{:02X} count={}", e.buffer_capacity, e.offset, e.header,
+                   (e.header >> 8) & 0x7F, ((e.header >> 16) & 0x3FFF) + 1);
+    else if (type == 0)
+      REXGPU_ERROR("  {:08X} {:06X} {:08X}  type0 reg=0x{:04X} count={}", e.buffer_capacity, e.offset, e.header,
+                   e.header & 0x7FFF, ((e.header >> 16) & 0x3FFF) + 1);
+    else
+      REXGPU_ERROR("  {:08X} {:06X} {:08X}  type{}", e.buffer_capacity, e.offset, e.header, type);
+  }
+  if (!buffer_size_bytes) return;
+  const uint8_t* base = memory_->TranslatePhysical(buffer_ptr);
+  // From 64 dwords before the batch start (or the failure) to the batch end, at most 512 dwords.
+  const uint32_t size_dw = buffer_size_bytes / 4;
+  const uint32_t first = (std::min(batch_start_bytes, fail_offset_bytes) / 4 + size_dw - 64) % size_dw;
+  const uint32_t end = write_offset_bytes / 4;
+  uint32_t n = (end + size_dw - first) % size_dw;
+  if (n == 0 || n > 512) n = 512;
+  for (uint32_t row = 0; row < n; row += 8) {
+    std::string line;
+    for (uint32_t k = row; k < std::min(n, row + 8); ++k) {
+      const uint32_t idx = (first + k) % size_dw;
+      uint32_t v;
+      std::memcpy(&v, base + idx * 4, 4);
+      line += fmt::format("{}{:08X}", idx * 4 == fail_offset_bytes ? '>' : ' ', rex::byte_swap(v));
+    }
+    REXGPU_ERROR("  +{:06X}:{}", ((first + row) % size_dw) * 4, line);
+  }
+}
+
 bool CommandProcessor::ExecutePacket(memory::RingBuffer* reader) {
+  packet_trace_[packet_trace_next_] = {static_cast<uint32_t>(reader->capacity()),
+                                       static_cast<uint32_t>(reader->read_offset()),
+                                       rex::byte_swap(*reinterpret_cast<const uint32_t*>(reader->read_ptr()))};
+  packet_trace_next_ = (packet_trace_next_ + 1) % kPacketTraceSize;
   const uint32_t packet = reader->ReadAndSwap<uint32_t>();
   const uint32_t packet_type = packet >> 30;
   if (packet == 0) {
