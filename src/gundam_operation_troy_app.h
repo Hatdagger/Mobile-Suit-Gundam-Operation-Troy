@@ -44,9 +44,17 @@ class GundamOperationTroyApp : public rex::ReXApp {
     }
   }
 
+  // Graphics: load the SDK's Xenos GPU emulation plugin (rexgpu-xenos.dll next to
+  // the exe). Without it the game runs with no graphics at all (black window).
+  // A gpu_plugin line in gundam_operation_troy.toml still takes precedence.
+  void OnPreSetup(rex::RuntimeConfig& config) override {
+    if (config.gpu_plugin.empty()) {
+      config.gpu_plugin = "xenos";
+    }
+  }
+
   // Other hooks available for customization:
   // void OnPostInitLogging() override {}
-  // void OnPreSetup(rex::RuntimeConfig& config) override {}
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
   // void OnPostSetup() override {}

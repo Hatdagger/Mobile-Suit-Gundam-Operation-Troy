@@ -21,4 +21,6 @@ else()
     add_executable(gundam_operation_troy ${GUNDAMOPERATIONTROY_SOURCES})
 endif()
 
-rexglue_setup_target(gundam_operation_troy)
+# GPU_PLUGINS xenos builds the SDK's Xenos GPU emulation (rexgpu-xenos.dll) and
+# copies it next to the game; the game loads it at start (see OnPreSetup).
+rexglue_setup_target(gundam_operation_troy GPU_PLUGINS xenos)
