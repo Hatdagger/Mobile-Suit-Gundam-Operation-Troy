@@ -1186,6 +1186,11 @@ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMe
     return true;
   }
 
+  // gpu_rt_log: what this resolve did ("direct", or how many render target pieces were
+  // dumped to the EDRAM buffer; 0 = nothing in the cache owned that EDRAM, so it copies
+  // whatever the buffer held).
+  std::string rt_log_how = GetPath() == Path::kHostRenderTargets ? "rtv no dump" : "rov edram";
+
   DeferredCommandList& command_list = command_processor_.GetDeferredCommandList();
 
   // Copying.
@@ -1206,6 +1211,7 @@ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMe
           direct_resolved =
               TryResolveCopyDirectly(resolve_info, copy_shader, draw_resolution_scaled);
           if (direct_resolved) {
+            rt_log_how = "direct";
             ++direct_resolve_success_count_;
           } else {
             ++direct_resolve_fallback_count_;
@@ -1223,6 +1229,7 @@ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMe
             REXGPU_ERROR("D3D12RenderTargetCache: Failed to dump host render targets for resolve");
             return false;
           }
+          rt_log_how = fmt::format("dump {} pieces", dump_rectangles_.size());
         }
       }
 
@@ -1330,6 +1337,29 @@ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMe
     }
   } else {
     copied = true;
+  }
+
+  if (REXCVAR_GET(gpu_rt_log)) {
+    const bool depth = resolve_info.IsCopyingDepth();
+    const draw_util::ResolveEdramInfo& edram =
+        depth ? resolve_info.depth_edram_info : resolve_info.color_edram_info;
+    std::string text = fmt::format(
+        "RTLOG resolve: {} base {} (orig {}) pitch {} msaa {}x fmt {}{} -> {}x{} at {:08X} dest fmt "
+        "{} num {} bias {}{}, {} (copy {}, clear depth {} color {})",
+        depth ? "depth" : fmt::format("c{}", uint32_t(resolve_info.rb_copy_control.copy_src_select)),
+        uint32_t(edram.base_tiles),
+        depth ? resolve_info.depth_original_base : resolve_info.color_original_base,
+        uint32_t(edram.pitch_tiles), 1u << uint32_t(edram.msaa_samples), uint32_t(edram.format),
+        edram.format_is_64bpp ? " (64bpp)" : "",
+        uint32_t(resolve_info.coordinate_info.width_div_8) * 8, resolve_info.height_div_8 * 8,
+        resolve_info.copy_dest_base, uint32_t(resolve_info.copy_dest_info.copy_dest_format),
+        uint32_t(resolve_info.copy_dest_info.copy_dest_number),
+        int32_t(resolve_info.copy_dest_info.copy_dest_exp_bias),
+        resolve_info.copy_dest_extent_length ? "" : " (no dest)", rt_log_how,
+        copied ? "ok" : "FAILED", resolve_info.IsClearingDepth(), resolve_info.IsClearingColor());
+    if (RenderTargetLogFirstTime(text)) {
+      REXGPU_INFO("{}", text);
+    }
   }
 
   // Clearing.

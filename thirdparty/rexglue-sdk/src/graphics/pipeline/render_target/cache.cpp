@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <mutex>
+#include <string>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
@@ -37,11 +39,26 @@ REXCVAR_DEFINE_BOOL(execute_unclipped_draw_vs_on_cpu_for_psi_render_backend, tru
 REXCVAR_DEFINE_BOOL(snorm16_render_target_full_range, true, "GPU",
                     "Use full range for SNORM16 render targets");
 
+REXCVAR_DEFINE_BOOL(gpu_rt_log, false, "GPU/Debug",
+                    "Log each distinct render target setup and resolve (copy out of EDRAM) once")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 REXCVAR_DEFINE_BOOL(direct_host_resolve, true, "GPU",
                     "Resolve from host render targets directly to shared memory when possible")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 namespace rex::graphics {
+
+// gpu_rt_log: true the first time this text is seen (at most a few hundred kept).
+bool RenderTargetLogFirstTime(const std::string& text) {
+  static std::mutex mutex;
+  static std::unordered_set<std::string> seen;
+  std::lock_guard lock(mutex);
+  if (seen.size() >= 400) {
+    return false;
+  }
+  return seen.insert(text).second;
+}
 
 void RenderTargetCache::GetPSIColorFormatInfo(xenos::ColorRenderTargetFormat format,
                                               uint32_t write_mask, float& clamp_rgb_low,
@@ -457,6 +474,7 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
   // depth_and_color_rts_used_bits -> EDRAM base.
   uint32_t edram_bases[1 + xenos::kMaxColorRenderTargets];
   uint32_t resource_formats[1 + xenos::kMaxColorRenderTargets];
+  uint32_t guest_formats[1 + xenos::kMaxColorRenderTargets] = {};
   uint32_t rts_are_64bpp = 0;
   if (is_rasterization_done) {
     if (normalized_depth_control.z_enable || normalized_depth_control.stencil_enable) {
@@ -466,6 +484,7 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
       // With pixel shader interlock, always the same addressing disregarding
       // the format.
       resource_formats[0] = interlock_barrier_only ? 0 : uint32_t(rb_depth_info.depth_format);
+      guest_formats[0] = uint32_t(rb_depth_info.depth_format);
     }
     for (uint32_t i = 0; i < xenos::kMaxColorRenderTargets; ++i) {
       if (!(normalized_color_mask & (uint32_t(0b1111) << (4 * i)))) {
@@ -477,6 +496,7 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
       edram_bases[rt_bit_index] = color_info.color_base;
       xenos::ColorRenderTargetFormat color_format =
           regs.Get<reg::RB_COLOR_INFO>(reg::RB_COLOR_INFO::rt_register_indices[i]).color_format;
+      guest_formats[rt_bit_index] = uint32_t(color_format);
       bool is_64bpp = xenos::IsColorRenderTargetFormat64bpp(color_format);
       if (is_64bpp) {
         rts_are_64bpp |= uint32_t(1) << rt_bit_index;
@@ -688,6 +708,25 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
     uint32_t rt_bit_index = rt_base_index.second;
     ChangeOwnership(rt_keys[rt_bit_index], 0, rt_lengths_tiles[i],
                     interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index]);
+  }
+
+  if (REXCVAR_GET(gpu_rt_log)) {
+    std::string text = fmt::format("RTLOG bind: pitch {} tiles, msaa {}x, height {}",
+                                   pitch_tiles_at_32bpp, 1u << uint32_t(msaa_samples), height_used);
+    for (uint32_t i = 0; i < edram_bases_sorted_count; ++i) {
+      const uint32_t bit = edram_bases_sorted[i].second;
+      text += fmt::format(" | {} base {} fmt {} len {}", bit ? fmt::format("c{}", bit - 1) : "depth",
+                          edram_bases_sorted[i].first, guest_formats[bit], rt_lengths_tiles[i]);
+      if (!interlock_barrier_only) {
+        size_t transfers = last_update_transfers_[bit].size();
+        if (transfers) {
+          text += fmt::format(" (transfers {})", transfers);
+        }
+      }
+    }
+    if (RenderTargetLogFirstTime(text)) {
+      REXGPU_INFO("{}", text);
+    }
   }
 
   if (interlock_barrier_only) {

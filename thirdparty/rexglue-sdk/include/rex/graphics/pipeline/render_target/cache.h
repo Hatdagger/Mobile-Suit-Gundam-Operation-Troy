@@ -10,6 +10,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <string>
 #include <cmath>
 #include <cstdint>
 #include <functional>
@@ -29,6 +30,9 @@
 #include <rex/graphics/xenos.h>
 
 namespace rex::graphics {
+
+// gpu_rt_log: true the first time this text is seen (render_target/cache.cpp).
+bool RenderTargetLogFirstTime(const std::string& text);
 
 class RenderTargetCache {
  public:
