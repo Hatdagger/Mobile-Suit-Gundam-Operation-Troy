@@ -251,6 +251,8 @@ class CommandProcessor {
   // Bumped by InitializeRingBuffer (game thread) so the GPU worker does not overwrite the reset
   // read pointer with the end of a batch it was executing from the old ring.
   std::atomic<uint32_t> ring_generation_{0};
+  // Orders VdInitializeRingBuffer against the worker's read pointer update.
+  std::mutex ring_mutex_;
 
   // The last packets read (diagnostics for a bad packet; written by the GPU worker thread only).
   struct PacketTraceEntry {

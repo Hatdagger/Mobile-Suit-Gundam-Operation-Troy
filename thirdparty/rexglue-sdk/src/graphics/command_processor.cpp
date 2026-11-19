@@ -242,13 +242,25 @@ void CommandProcessor::WorkerThreadMain() {
     // A game can set up a new ring (VdInitializeRingBuffer, read pointer back to 0) while a batch
     // from the old one runs here. Keep that reset: storing the old batch's end over it made the
     // next batch run from the wrong place, across the whole empty ring, and the game deadlocked.
-    const uint32_t generation = ring_generation_.load();
-    const uint32_t batch_end = ExecutePrimaryBuffer(read_ptr_index_, write_ptr_index);
-    if (ring_generation_.load() == generation) {
-      read_ptr_index_ = batch_end;
-    } else {
-      REXGPU_DEBUG("Ring buffer re-initialized during a batch; reading the new ring from the start");
-      read_ptr_index_ = 0;
+    uint32_t generation;
+    uint32_t read_index;
+    {
+      std::lock_guard<std::mutex> lock(ring_mutex_);
+      generation = ring_generation_.load();
+      read_index = read_ptr_index_;
+      write_ptr_index = write_ptr_index_.load();
+    }
+    if (read_index == write_ptr_index || write_ptr_index == 0xBAADF00D) {
+      continue;  // The ring was re-initialized while we woke up.
+    }
+    const uint32_t batch_end = ExecutePrimaryBuffer(read_index, write_ptr_index);
+    {
+      std::lock_guard<std::mutex> lock(ring_mutex_);
+      if (ring_generation_.load() == generation) {
+        read_ptr_index_ = batch_end;
+      } else {
+        REXGPU_DEBUG("Ring buffer re-initialized during a batch; reading the new ring from the start");
+      }
     }
 
     // TODO(benvanik): use reader->Read_update_freq_ and only issue after moving
@@ -322,7 +334,12 @@ bool CommandProcessor::SetupContext() {
 void CommandProcessor::ShutdownContext() {}
 
 void CommandProcessor::InitializeRingBuffer(uint32_t ptr, uint32_t size_log2) {
+  // A new ring starts empty: both pointers at 0, as on hardware. Leaving the old write
+  // pointer made the worker run the new, still empty ring up to it, so the game's first
+  // real write (a smaller index) looked like a wrap through the whole ring (black screen).
+  std::lock_guard<std::mutex> lock(ring_mutex_);
   read_ptr_index_ = 0;
+  write_ptr_index_ = 0;
   primary_buffer_ptr_ = ptr;
   primary_buffer_size_ = uint32_t(1) << (size_log2 + 3);
   ring_generation_.fetch_add(1);
