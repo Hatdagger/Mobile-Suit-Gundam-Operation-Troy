@@ -25,6 +25,7 @@
 #include <rex/graphics/flags.h>
 #include <rex/graphics/registers.h>
 #include <rex/graphics/util/draw.h>
+#include <rex/graphics/util/draw_debug.h>
 #include <rex/graphics/xenos.h>
 #include <rex/kernel/xboxkrnl/video.h>
 #include <rex/logging.h>
@@ -48,6 +49,12 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
 namespace rex::graphics::d3d12 {
+
+namespace {
+// Draw debugging (gpu_draw_log / gpu_draw_skip_shaders / gpu_draw_hunt). Only
+// used on the GPU command processor thread.
+DrawDebug g_draw_debug;
+}  // namespace
 
 // Generated with `xb buildshaders`.
 namespace shaders {
@@ -2254,6 +2261,9 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
   // End the frame even if did not present for any reason (the image refresher
   // was not called), to prevent leaking per-frame resources.
   EndSubmission(true);
+
+  g_draw_debug.OnFrameEnd(
+      [presenter](ui::RawImage& image) { return presenter->CaptureGuestOutput(image); });
 }
 
 void D3D12CommandProcessor::OnPrimaryBufferEnd() {
@@ -2326,6 +2336,15 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   }
   bool memexport_used_pixel = pixel_shader && (pixel_shader->memexport_eM_written() != 0);
   bool memexport_used = memexport_used_vertex || memexport_used_pixel;
+
+  if (!memexport_used &&
+      g_draw_debug.OnDraw(regs, *vertex_shader, pixel_shader, primitive_type, index_count,
+                          [this](uint32_t address) -> const uint8_t* {
+                            return memory_->TranslatePhysical<const uint8_t*>(address);
+                          })) {
+    // Skipped by a draw debugging option.
+    return true;
+  }
 
   if (!BeginSubmission(true)) {
     return false;

@@ -24,6 +24,9 @@
 #include <rex/math.h>
 #include <rex/string.h>
 
+REXCVAR_DEFINE_BOOL(gpu_vertex_float16_xenos_range, true, "GPU/Shader",
+                    "Read 16-bit float vertex data the Xbox 360 way (no infinity/NaN; "
+                    "exponent 31 is a normal number). Off = old D3D behaviour.");
 REXCVAR_DEFINE_BOOL(draw_resolution_scaled_texture_offsets, true, "GPU/Shader",
                     "Scale texture offsets with draw resolution");
 
@@ -389,7 +392,29 @@ void DxbcShaderTranslator::ProcessVertexFetchInstruction(
         // games relying on that yet.
         a_.OpUBFE(result_unpacked_dest, dxbc::Src::LU(16), dxbc::Src::LU(0, 16, 0, 16),
                   dxbc::Src::R(system_temp_result_, 0b01010000));
-        a_.OpF16ToF32(result_unpacked_dest, result_src);
+        if (REXCVAR_GET(gpu_vertex_float16_xenos_range)) {
+          // Xenos float16 has no infinity or NaN: exponent 31 is an ordinary
+          // exponent (range up to +-131008). The CPU's vpkd3d128 saturates big
+          // values to 0x7FFF, which D3D would read as NaN. Convert exponent 31
+          // as exponent 30, then multiply by 2.
+          uint32_t ext_temp = PushSystemTemp();
+          dxbc::Dest ext_dest(dxbc::Dest::R(ext_temp, used_format_components));
+          dxbc::Src ext_src(dxbc::Src::R(ext_temp));
+          // ext = (h & 0x7C00) == 0x7C00 ? 0xFFFFFFFF : 0
+          a_.OpAnd(ext_dest, result_src, dxbc::Src::LU(0x7C00));
+          a_.OpIEq(ext_dest, ext_src, dxbc::Src::LU(0x7C00));
+          // ext = -0x400 or 0; h += ext (exponent 31 -> 30)
+          a_.OpAnd(ext_dest, ext_src, dxbc::Src::LU(0xFFFFFC00));
+          a_.OpIAdd(result_unpacked_dest, result_src, ext_src);
+          a_.OpF16ToF32(result_unpacked_dest, result_src);
+          // ext = 1.0 or 0.0, then 2.0 or 1.0; scale the result
+          a_.OpAnd(ext_dest, ext_src, dxbc::Src::LU(0x3F800000));
+          a_.OpAdd(ext_dest, ext_src, dxbc::Src::LF(1.0f));
+          a_.OpMul(result_unpacked_dest, result_src, ext_src);
+          PopSystemTemp();
+        } else {
+          a_.OpF16ToF32(result_unpacked_dest, result_src);
+        }
         break;
       case xenos::VertexFormat::k_32:
       case xenos::VertexFormat::k_32_32:

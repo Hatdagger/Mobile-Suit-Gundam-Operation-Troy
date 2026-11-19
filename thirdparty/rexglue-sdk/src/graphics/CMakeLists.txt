@@ -20,6 +20,7 @@ set(REXGPU_XENOS_SOURCES
     command_processor.cpp
     util/draw_extent_estimator.cpp
     util/draw.cpp
+    util/draw_debug.cpp
     packet_disassembler.cpp
     primitive_processor.cpp
     pipeline/render_target/cache.cpp
