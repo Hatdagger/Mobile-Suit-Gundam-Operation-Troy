@@ -114,7 +114,10 @@ Info Detect(const fs::path& tools_dir) {
       return proc::Capture(c, &out, nullptr) == 0 ? FirstLine(out) : std::string();
     };
     info.vs_path = query("installationPath");
-    if (!info.vs_path.empty()) info.vs_name = query("displayName");
+    if (!info.vs_path.empty()) {
+      info.vs_name = query("displayName");
+      info.vs_year = std::atoi(query("catalog_productLineVersion").c_str());
+    }
   }
   const fs::path vs = util::U8Path(info.vs_path);
   if (info.vs_path.empty()) {
@@ -142,8 +145,11 @@ Info Detect(const fs::path& tools_dir) {
       info.clang_major = major;
       break;
     }
+    if (info.old_clang.empty()) info.old_clang = version;
   }
-  if (info.clang_dir.empty()) info.missing.push_back("clang 18 or newer");
+  if (info.clang_dir.empty())
+    info.missing.push_back(info.old_clang.empty() ? "clang 18 or newer"
+                                                  : "clang 18 or newer (found " + info.old_clang + ")");
 
   // CMake 3.25 or newer.
   std::vector<std::string> cmakes;

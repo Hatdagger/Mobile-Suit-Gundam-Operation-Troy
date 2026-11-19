@@ -12,6 +12,8 @@ namespace toolchain {
 struct Info {
   bool ok = false;  // everything needed to build is present
   std::string vs_path, vs_name, vcvars;  // Visual Studio (Windows)
+  int vs_year = 0;                       // 2019, 2022, ... (0 if unknown)
+  std::string old_clang;                 // version of a clang found that is older than 18
   std::string clang_dir, clang_version;
   int clang_major = 0;
   std::string cmake, cmake_version;

@@ -295,34 +295,138 @@ bool GetSource(JobContext& ctx, const toolchain::Info& tools) {
   return GitHelperLibs(ctx, tools);
 }
 
+// Plain words for the Visual Studio installer's exit codes (Microsoft's documented list).
+std::string InstallerCodeText(int code) {
+  switch (code) {
+    case 740: return "it needs administrator permission";
+    case 1001: return "the Visual Studio Installer is already open; close it and try again";
+    case 1003: return "Visual Studio is in use; close it and try again";
+    case 1602:
+    case 5004: return "it was cancelled";
+    case 1618: return "another installation is running; wait for it to finish";
+    case 5003: return "it could not download its files; check the internet connection";
+    case 5007: return "Microsoft's installer says this PC does not meet a requirement (often low disk space on C:, or the installer needs updating first)";
+    case 8006: return "Visual Studio programs are running; close them and try again";
+    case 8010: return "this version of Windows is not supported";
+    default: return "";
+  }
+}
+
+bool InstallerCancelled(int code) { return code == 1602 || code == 5004; }
+
+std::string InstallerFailure(int code, const std::string& err) {
+  if (code == proc::kStartFailed) return "The installer did not start: " + err;
+  std::string s = "The installer stopped (code " + std::to_string(code) + ")";
+  const std::string why = InstallerCodeText(code);
+  return why.empty() ? s + "." : s + ": " + why + ".";
+}
+
+#ifdef _WIN32
+int RunInstaller(JobContext& ctx, const std::string& exe, const std::string& params, std::string* err) {
+  ctx.log->Add("> " + exe + " " + params);
+  const int code = proc::RunShell(exe, params, ctx.cancel, err);
+  if (code == proc::kStartFailed)
+    ctx.log->Add("The installer did not start: " + *err);
+  else if (code != proc::kCancelled)
+    ctx.log->Add("Installer exit code " + std::to_string(code) +
+                 (InstallerCodeText(code).empty() ? "" : " (" + InstallerCodeText(code) + ")"));
+  return code;
+}
+#endif
+
 bool InstallBuildTools(JobContext& ctx, const toolchain::Info& tools) {
 #ifdef _WIN32
-  std::string exe, params;
-  if (!tools.vs_path.empty()) {
-    const char* pf86 = SDL_getenv("ProgramFiles(x86)");
-    exe = util::PathStr(util::U8Path(pf86 ? pf86 : "") / "Microsoft Visual Studio" / "Installer" / "setup.exe");
-    params = "modify --installPath " + proc::QuoteArg(tools.vs_path) + " " + toolchain::InstallerComponents() +
-             " --passive --norestart";
-  } else {
-    const fs::path bootstrapper = ctx.layout.tools_dir / "vs_BuildTools.exe";
-    if (!Download(ctx, tools, "https://aka.ms/vs/17/release/vs_BuildTools.exe", bootstrapper,
-                  "Microsoft's Build Tools installer", 0.f, 0.05f))
-      return false;
-    exe = util::PathStr(bootstrapper);
-    params = toolchain::InstallerComponents() + " --passive --wait --norestart";
-  }
-  Report(ctx, "Microsoft's installer is running (it may ask for permission; about 6 GB)", -1.f);
-  ctx.log->Add("> " + exe + " " + params);
+  ctx.log->Add("Found: " + (tools.vs_path.empty() ? std::string("no Visual Studio with C++ tools")
+                                                  : tools.vs_name + " (" + tools.vs_path + ")"));
+  ctx.log->Add(tools.Summary());
   std::string err;
-  const int code = proc::RunShell(exe, params, ctx.cancel, &err);
+
+  // An existing Visual Studio 2022 or newer gets the missing parts added. Anything
+  // older (or nothing) gets a fresh Build Tools 2022 beside it.
+  if (!tools.vs_path.empty() && tools.vs_year >= 2022) {
+    const char* pf86 = SDL_getenv("ProgramFiles(x86)");
+    const std::string setup =
+        util::PathStr(util::U8Path(pf86 ? pf86 : "") / "Microsoft Visual Studio" / "Installer" / "setup.exe");
+    const std::string where = "--installPath " + proc::QuoteArg(tools.vs_path);
+
+    // A clang that is too old means this Visual Studio is out of date, and Microsoft's
+    // installer often refuses to add parts to an out-of-date copy. Update it first.
+    if (!tools.old_clang.empty()) {
+      Report(ctx, "Updating Visual Studio (it may ask for permission)", -1.f);
+      ctx.log->Add("clang " + tools.old_clang + " is too old, so Visual Studio is updated first.");
+      const int code = RunInstaller(ctx, setup, "update " + where + " --passive --norestart", &err);
+      if (code == proc::kCancelled || InstallerCancelled(code)) {
+        ctx.error = "The update was cancelled.";
+        return false;
+      }
+      // If the update fails, the steps below still run and show Microsoft's own window.
+    }
+
+    Report(ctx, "Microsoft's installer is running (it may ask for permission; about 6 GB)", -1.f);
+    const std::string params = "modify " + where + " " + toolchain::InstallerComponents();
+    int code = RunInstaller(ctx, setup, params + " --passive --norestart", &err);
+    if (code == 0 || code == 3010) {
+      ctx.log->Add(code == 3010 ? "Build Tools installed (Windows asks for a restart)." : "Build Tools installed.");
+      return true;
+    }
+    if (code == proc::kCancelled || code == proc::kStartFailed || InstallerCancelled(code)) {
+      ctx.error = code == proc::kCancelled ? "Cancelled." : InstallerFailure(code, err);
+      return false;
+    }
+
+    // The quiet install failed. Open Microsoft's installer window with the same parts
+    // ticked, so the player can see its reason (disk space, an update it needs) and fix it there.
+    const std::string first_failure = InstallerFailure(code, err);
+    ctx.log->Add(first_failure);
+    ctx.log->Add("Opening Microsoft's installer window so you can see what it needs.");
+    Report(ctx, "Finish in Microsoft's installer window, then close it", -1.f);
+    code = RunInstaller(ctx, setup, params + " --norestart", &err);
+    if (code == 0 || code == 3010) {
+      ctx.log->Add(code == 3010 ? "Build Tools installed (Windows asks for a restart)." : "Build Tools installed.");
+      return true;
+    }
+    if (code == proc::kCancelled) {
+      ctx.error = "Cancelled.";
+      return false;
+    }
+    // Closing the window can give a non-zero code even when the parts went in, so let
+    // the check that follows decide. Keep the first reason in case they are still missing.
+    ctx.log->Add("Checking the build tools again.");
+    ctx.error = first_failure;
+    return true;
+  }
+
+  const fs::path bootstrapper = ctx.layout.tools_dir / "vs_BuildTools.exe";
+  if (!Download(ctx, tools, "https://aka.ms/vs/17/release/vs_BuildTools.exe", bootstrapper,
+                "Microsoft's Build Tools installer", 0.f, 0.05f))
+    return false;
+  Report(ctx, "Microsoft's installer is running (it may ask for permission; about 6 GB)", -1.f);
+  const std::string params = toolchain::InstallerComponents() + " --wait --norestart";
+  int code = RunInstaller(ctx, util::PathStr(bootstrapper), params + " --passive", &err);
   if (code == 0 || code == 3010) {
     ctx.log->Add(code == 3010 ? "Build Tools installed (Windows asks for a restart)." : "Build Tools installed.");
     return true;
   }
-  ctx.error = code == proc::kStartFailed ? "The installer did not start: " + err
-                                         : "The installer stopped (code " + std::to_string(code) + ").";
-  ctx.log->Add(ctx.error);
-  return false;
+  if (code == proc::kCancelled || code == proc::kStartFailed || InstallerCancelled(code)) {
+    ctx.error = code == proc::kCancelled ? "Cancelled." : InstallerFailure(code, err);
+    return false;
+  }
+  const std::string first_failure = InstallerFailure(code, err);
+  ctx.log->Add(first_failure);
+  ctx.log->Add("Opening Microsoft's installer window so you can see what it needs.");
+  Report(ctx, "Finish in Microsoft's installer window, then close it", -1.f);
+  code = RunInstaller(ctx, util::PathStr(bootstrapper), params, &err);
+  if (code == 0 || code == 3010) {
+    ctx.log->Add(code == 3010 ? "Build Tools installed (Windows asks for a restart)." : "Build Tools installed.");
+    return true;
+  }
+  if (code == proc::kCancelled) {
+    ctx.error = "Cancelled.";
+    return false;
+  }
+  ctx.log->Add("Checking the build tools again.");
+  ctx.error = first_failure;
+  return true;
 #else
   ctx.error = "Install clang 18 or newer, CMake 3.25 or newer and Ninja with your system's package manager.";
   return false;

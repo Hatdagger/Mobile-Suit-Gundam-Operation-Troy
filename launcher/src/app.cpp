@@ -550,8 +550,13 @@ void App::StartSetupJob(bool install_tools) {
   if (install_tools) {
     list->push_back({Row::Tools, "Installing build tools", [](JobContext& ctx, toolchain::Info& tools) {
                        if (!steps::InstallBuildTools(ctx, tools)) return false;
+                       const std::string installer_note = ctx.error;  // set if the quiet install failed
+                       ctx.error.clear();
                        tools = toolchain::Detect(ctx.layout.tools_dir);
-                       if (!tools.ok) ctx.error = "Build tools are still missing after the installer: " + tools.Summary();
+                       ctx.log->Add(tools.Summary());
+                       if (!tools.ok)
+                         ctx.error = (installer_note.empty() ? std::string() : installer_note + " ") +
+                                     "Still missing: " + tools.Summary().substr(9) + ". Details: %TEMP%\\dd_setup_*.log";
                        return tools.ok;
                      }});
   }
