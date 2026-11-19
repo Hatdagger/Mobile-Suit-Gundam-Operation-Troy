@@ -582,10 +582,31 @@ bool Update(JobContext& ctx, toolchain::Info& tools, bool* changed) {
     Report(ctx, "Checking for updates", -1.f);
     const std::string before = GitHead(ctx, tools);
     const proc::Env env = GitEnv();
-    if (RunLogged(ctx, Cmd(Git(tools, {"pull", "--ff-only"}), l.source_dir, &env)) != 0) {
-      if (ctx.error.empty())
-        ctx.error = "Getting the update failed (git pull). If you changed files in the source, undo those changes.";
-      return false;
+    if (l.dev) {
+      // The player's own repository copy: never throw away their changes.
+      if (RunLogged(ctx, Cmd(Git(tools, {"pull", "--ff-only"}), l.source_dir, &env)) != 0) {
+        if (ctx.error.empty())
+          ctx.error = "Getting the update failed (git pull). If you changed files in the source, undo those changes.";
+        return false;
+      }
+    } else {
+      // The launcher's own copy (RecompData\source): nobody edits it, but the build rewrites some
+      // tracked files (generated/rexglue.cmake, with different line endings), which made
+      // "git pull" refuse to update. Fetch, then reset to the latest version; the extracted
+      // game, the build and the converted code are untracked and stay.
+      if (RunLogged(ctx, Cmd(Git(tools, {"fetch", "origin"}), l.source_dir, &env)) != 0) {
+        if (ctx.error.empty()) ctx.error = "Getting the update failed (git fetch). Check your internet connection.";
+        return false;
+      }
+      std::string changed_files, err;
+      proc::Capture(Cmd(Git(tools, {"status", "--porcelain", "--untracked-files=no"}), l.source_dir, &env),
+                    &changed_files, &err);
+      if (!util::Trim(changed_files).empty())
+        ctx.log->Add("Replacing locally changed files with the downloaded version:\n" + util::Trim(changed_files));
+      if (RunLogged(ctx, Cmd(Git(tools, {"reset", "--hard", "@{u}"}), l.source_dir, &env)) != 0) {
+        if (ctx.error.empty()) ctx.error = "Getting the update failed (git reset).";
+        return false;
+      }
     }
     const std::string after = GitHead(ctx, tools);
     *changed = before != after;
