@@ -451,13 +451,13 @@ void FillOwnXnAddr(XNADDR* addr) {
   std::memset(addr, 0, sizeof(XNADDR));
   auto& live = Live();
   if (live.SignedInToLive()) {
-    addr->ina.s_addr = live.online_ip();
-    addr->inaOnline.s_addr = live.online_ip();
+    addr->ina.addr = live.online_ip();
+    addr->inaOnline.addr = live.online_ip();
     addr->wPortOnline = live.player_port();
   } else if (live.mode() != live::NetworkMode::kOffline) {
-    addr->ina.s_addr = live.local_ip();
+    addr->ina.addr = live.local_ip();
   } else {
-    addr->ina.s_addr = htonl(INADDR_LOOPBACK);  // offline: as the SDK did before
+    addr->ina.addr = htonl(INADDR_LOOPBACK);  // offline: as the SDK did before
   }
   addr->abOnline[kXnAddrPlatformTypeOffset] = kPlatformXbox360;
   // A real, per-PC MAC. RakNet-based games need it non-zero (see 58411436).
@@ -534,7 +534,7 @@ u32 NetDll_XNetXnAddrToMachineId_entry(u32 caller, ppc_ptr_t<XNADDR> addr_ptr,
     return X_WSAEINVAL;
   }
   *id_ptr = 0;
-  if (!addr_ptr || !addr_ptr->inaOnline.s_addr || !addr_ptr->wPortOnline) {
+  if (!addr_ptr || !addr_ptr->inaOnline.addr || !addr_ptr->wPortOnline) {
     return X_WSAEINVAL;
   }
   *id_ptr = live::MachineIdFromMac(LoadMac(addr_ptr->abEnet));
@@ -561,17 +561,17 @@ u32 NetDll_XNetXnAddrToInAddr_entry(u32 caller, ppc_ptr_t<XNADDR> xn_addr, mappe
   if (!xn_addr || !in_addr) {
     return X_WSAEINVAL;
   }
-  in_addr->s_addr = 0;
+  in_addr->addr = 0;
 
   // Our own address: talk to ourselves (494707E4, 4E4D07D1).
   if (LoadMac(xn_addr->abEnet) == Live().identity().mac_address) {
-    in_addr->s_addr = htonl(INADDR_LOOPBACK);
+    in_addr->addr = htonl(INADDR_LOOPBACK);
     return X_ERROR_SUCCESS;
   }
   if (Live().mode() == live::NetworkMode::kLan) {
-    in_addr->s_addr = xn_addr->ina.s_addr;
+    in_addr->addr = xn_addr->ina.addr;
   } else {
-    in_addr->s_addr = xn_addr->inaOnline.s_addr;
+    in_addr->addr = xn_addr->inaOnline.addr;
   }
   return X_ERROR_SUCCESS;
 }
@@ -600,8 +600,8 @@ u32 NetDll_XNetInAddrToXnAddr_entry(u32 caller, u32 in_addr, ppc_ptr_t<XNADDR> x
   }
 
   const uint32_t ip = ToNetworkOrder(in_addr);
-  xn_addr->ina.s_addr = ip;
-  xn_addr->inaOnline.s_addr = ip;
+  xn_addr->ina.addr = ip;
+  xn_addr->inaOnline.addr = ip;
   xn_addr->wPortOnline = Live().player_port();
   xn_addr->abOnline[kXnAddrPlatformTypeOffset] = kPlatformXbox360;
 
@@ -636,7 +636,7 @@ u32 NetDll_XNetServerToInAddr_entry(u32 caller, u32 server_addr, u32 service_id,
   if (!server_addr || !service_id || !pina) {
     return X_WSAEINVAL;
   }
-  pina->s_addr = ToNetworkOrder(server_addr);
+  pina->addr = ToNetworkOrder(server_addr);
   return X_ERROR_SUCCESS;
 }
 
@@ -644,7 +644,7 @@ u32 NetDll_XNetInAddrToServer_entry(u32 caller, u32 server_addr, ppc_ptr_t<XIN_A
   if (!server_addr || !pina) {
     return X_WSAEINVAL;
   }
-  pina->s_addr = ToNetworkOrder(server_addr);
+  pina->addr = ToNetworkOrder(server_addr);
   return X_ERROR_SUCCESS;
 }
 
@@ -729,7 +729,7 @@ u32 NetDll_XNetDnsLookup_entry(u32 caller, mapped_string host, u32 event_handle,
       uint32_t count = 0;
       for (addrinfo* i = info; i && count < 8; i = i->ai_next) {
         if (i->ai_addr && i->ai_addr->sa_family == AF_INET) {
-          dns->aina[count++].s_addr = reinterpret_cast<sockaddr_in*>(i->ai_addr)->sin_addr.s_addr;
+          dns->aina[count++].addr = reinterpret_cast<sockaddr_in*>(i->ai_addr)->sin_addr.s_addr;
         }
       }
       dns->cina = count;

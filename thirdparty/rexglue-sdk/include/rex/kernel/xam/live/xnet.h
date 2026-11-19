@@ -27,7 +27,7 @@ namespace rex::kernel::xam {
 
 // An IPv4 address in network byte order (same layout as in_addr).
 struct XIN_ADDR {
-  uint32_t s_addr;
+  uint32_t addr;  // not "s_addr": Windows headers #define s_addr
 };
 static_assert(sizeof(XIN_ADDR) == 4);
 
