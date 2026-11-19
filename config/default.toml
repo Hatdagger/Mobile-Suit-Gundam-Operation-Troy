@@ -1,0 +1,7 @@
+# Codegen hints for default.xex (Gundam Operation Troy, title 424107D6, media 41CFB0AF).
+# These are addresses only, no game code.
+
+[functions]
+# Reached only by tail-call branches; the scanner does not find their starts.
+"0x823E60B8" = {}  # b from 0x823B2004
+"0x82370128" = {}  # b from 0x8237126C

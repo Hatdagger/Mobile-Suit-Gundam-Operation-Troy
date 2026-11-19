@@ -1,0 +1,88 @@
+[submodule "rexglue-sdk/FFmpeg"]
+	path = thirdparty/rexglue-sdk/thirdparty/FFmpeg
+	url = https://github.com/wmarti/FFmpeg.git
+	shallow = true
+[submodule "rexglue-sdk/catch2"]
+	path = thirdparty/rexglue-sdk/thirdparty/catch2
+	url = https://github.com/catchorg/Catch2.git
+	shallow = true
+[submodule "rexglue-sdk/cli11"]
+	path = thirdparty/rexglue-sdk/thirdparty/cli11
+	url = https://github.com/CLIUtils/CLI11
+	shallow = true
+[submodule "rexglue-sdk/fmt"]
+	path = thirdparty/rexglue-sdk/thirdparty/fmt
+	url = https://github.com/fmtlib/fmt.git
+	shallow = true
+[submodule "rexglue-sdk/glslang"]
+	path = thirdparty/rexglue-sdk/thirdparty/glslang
+	url = https://github.com/KhronosGroup/glslang.git
+	shallow = true
+[submodule "rexglue-sdk/imgui"]
+	path = thirdparty/rexglue-sdk/thirdparty/imgui
+	url = https://github.com/ocornut/imgui.git
+	shallow = true
+[submodule "rexglue-sdk/inja"]
+	path = thirdparty/rexglue-sdk/thirdparty/inja
+	url = https://github.com/pantor/inja.git
+	shallow = true
+[submodule "rexglue-sdk/libmspack"]
+	path = thirdparty/rexglue-sdk/thirdparty/libmspack
+	url = https://github.com/kyz/libmspack.git
+	shallow = true
+[submodule "rexglue-sdk/moltenvk"]
+	path = thirdparty/rexglue-sdk/thirdparty/moltenvk
+	url = https://github.com/KhronosGroup/MoltenVK.git
+	shallow = true
+[submodule "rexglue-sdk/o1heap"]
+	path = thirdparty/rexglue-sdk/thirdparty/o1heap
+	url = https://github.com/pavel-kirienko/o1heap.git
+	shallow = true
+[submodule "rexglue-sdk/sdl3"]
+	path = thirdparty/rexglue-sdk/thirdparty/sdl3
+	url = https://github.com/libsdl-org/SDL
+	shallow = true
+[submodule "rexglue-sdk/simde"]
+	path = thirdparty/rexglue-sdk/thirdparty/simde
+	url = https://github.com/simd-everywhere/simde.git
+	shallow = true
+[submodule "rexglue-sdk/spdlog"]
+	path = thirdparty/rexglue-sdk/thirdparty/spdlog
+	url = https://github.com/gabime/spdlog.git
+	shallow = true
+[submodule "rexglue-sdk/spirv-headers"]
+	path = thirdparty/rexglue-sdk/thirdparty/spirv-headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+	shallow = true
+[submodule "rexglue-sdk/spirv-tools"]
+	path = thirdparty/rexglue-sdk/thirdparty/spirv-tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools.git
+	shallow = true
+[submodule "rexglue-sdk/tomlplusplus"]
+	path = thirdparty/rexglue-sdk/thirdparty/tomlplusplus
+	url = https://github.com/marzer/tomlplusplus.git
+	shallow = true
+[submodule "rexglue-sdk/tracy"]
+	path = thirdparty/rexglue-sdk/thirdparty/tracy
+	url = https://github.com/wolfpld/tracy.git
+	shallow = true
+[submodule "rexglue-sdk/utfcpp"]
+	path = thirdparty/rexglue-sdk/thirdparty/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git
+	shallow = true
+[submodule "rexglue-sdk/vulkan-headers"]
+	path = thirdparty/rexglue-sdk/thirdparty/vulkan-headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+	shallow = true
+[submodule "rexglue-sdk/vulkan-loader"]
+	path = thirdparty/rexglue-sdk/thirdparty/vulkan-loader
+	url = https://github.com/KhronosGroup/Vulkan-Loader.git
+	shallow = true
+[submodule "rexglue-sdk/vulkan-memory-allocator"]
+	path = thirdparty/rexglue-sdk/thirdparty/vulkan-memory-allocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+	shallow = true
+[submodule "rexglue-sdk/xxHash"]
+	path = thirdparty/rexglue-sdk/thirdparty/xxHash
+	url = https://github.com/Cyan4973/xxHash.git
+	shallow = true
