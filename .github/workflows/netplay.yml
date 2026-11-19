@@ -62,6 +62,21 @@ jobs:
           Stop-Process -Id $mock.Id
           exit $code
 
+      - name: Socket translation test (Winsock)
+        run: out/netcheck/optroy_netcheck.exe sockets
+
+      - name: UPnP test against mock routers
+        shell: pwsh
+        run: |
+          $a = Start-Process python -ArgumentList "tools/netcheck/mock_igd.py","--port","5000","--ssdp-port","1901","--conflict-port","7777" -PassThru -NoNewWindow
+          $b = Start-Process python -ArgumentList "tools/netcheck/mock_igd.py","--port","5001","--ssdp-port","1902","--permanent-only" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 2
+          out/netcheck/optroy_netcheck.exe upnp-selftest http://127.0.0.1:5000/rootDesc.xml 1901 http://127.0.0.1:5001/rootDesc.xml
+          $code = $LASTEXITCODE
+          Stop-Process -Id $a.Id
+          Stop-Process -Id $b.Id
+          exit $code
+
       - name: Reach the public server (HTTPS through WinHTTP)
         continue-on-error: true
         run: out/netcheck/optroy_netcheck.exe check
@@ -92,6 +107,16 @@ jobs:
           python3 tools/netcheck/mock_server.py --port 36000 &
           sleep 2
           out/netcheck/optroy_netcheck selftest http://127.0.0.1:36000
+
+      - name: Socket translation test (POSIX)
+        run: out/netcheck/optroy_netcheck sockets
+
+      - name: UPnP test against mock routers
+        run: |
+          python3 tools/netcheck/mock_igd.py --port 5000 --ssdp-port 1901 --conflict-port 7777 &
+          python3 tools/netcheck/mock_igd.py --port 5001 --ssdp-port 1902 --permanent-only &
+          sleep 2
+          out/netcheck/optroy_netcheck upnp-selftest http://127.0.0.1:5000/rootDesc.xml 1901 http://127.0.0.1:5001/rootDesc.xml
 
       - name: Reach the public server (HTTPS through libcurl)
         continue-on-error: true

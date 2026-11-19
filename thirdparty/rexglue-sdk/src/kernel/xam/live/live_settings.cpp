@@ -24,6 +24,11 @@ REXCVAR_DEFINE_STRING(api_address, "https://xenia-netplay-2a0298c0e3f4.herokuapp
 REXCVAR_DEFINE_BOOL(upnp, false, "Live", "Open the game's ports on the router automatically (UPnP)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+REXCVAR_DEFINE_STRING(upnp_root, "", "Live",
+                      "The router's UPnP description URL (e.g. http://192.168.1.1:5000/rootDesc.xml). "
+                      "Leave empty to find the router automatically.")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_BOOL(log_mask_ips, true, "Live",
                     "Hide the last part of IP addresses in the log");
 

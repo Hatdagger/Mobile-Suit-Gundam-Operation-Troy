@@ -18,6 +18,7 @@
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/xsocket.h>
 
 #include <chrono>
 
@@ -106,6 +107,50 @@ void LiveService::Start(uint32_t title_id, const std::filesystem::path& user_dat
                api_->api_address(), gamertag());
 
   thread_ = std::thread([this] { Run(); });
+
+  if (mode_ == NetworkMode::kOnline) {
+    StartUpnp();
+  }
+}
+
+namespace {
+std::atomic<Upnp*> g_upnp{nullptr};
+
+void OnSocketBound(uint16_t port, const char* protocol) {
+  if (Upnp* upnp = g_upnp.load()) {
+    upnp->OpenAsync(port, protocol);
+  }
+}
+
+void OnSocketClosed(uint16_t port, const char* protocol) {
+  if (Upnp* upnp = g_upnp.load()) {
+    upnp->CloseAsync(port, protocol);
+  }
+}
+}  // namespace
+
+void LiveService::StartUpnp() {
+  if (!REXCVAR_GET(upnp)) {
+    REXKRNL_INFO("Live: UPnP off (upnp = false); other players may not reach this PC "
+                 "unless its ports are forwarded on the router");
+    return;
+  }
+  UpnpConfig config;
+  config.root_url = REXCVAR_GET(upnp_root);
+  upnp_ = std::make_unique<Upnp>(config, KernelLogSink());
+  g_upnp.store(upnp_.get());
+  rex::system::XSocket::SetPortHooks(&OnSocketBound, &OnSocketClosed);
+  REXKRNL_INFO("Live: UPnP on; the game's ports will be opened on the router");
+}
+
+void LiveService::StopUpnp() {
+  if (!upnp_) {
+    return;
+  }
+  rex::system::XSocket::SetPortHooks(nullptr, nullptr);
+  g_upnp.store(nullptr);
+  upnp_->Shutdown();  // removes the mappings
+  upnp_.reset();
 }
 
 void LiveService::Stop() {
@@ -123,6 +168,7 @@ void LiveService::Stop() {
   if (thread_.joinable()) {
     thread_.join();
   }
+  StopUpnp();
   if (api_ && state_.load() == ConnectionState::kConnected) {
     // Xenia removes the console's sessions on exit, so nobody finds a dead match.
     LiveApiConfig config = api_->config();

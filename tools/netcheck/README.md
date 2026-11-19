@@ -15,6 +15,9 @@ run, then Artifacts, then `optroy-netcheck-windows-x64`).
 | `optroy_netcheck check 192.168.1.20:36000` | The same for a server on your own network. |
 | `optroy_netcheck sessions [server]` | Lists the Operation Troy matches the server knows about. Read only. |
 | `optroy_netcheck selftest <server>` | Registers two test players and runs a whole match life cycle (create, search, join, QoS, modify, leave, host migration, delete), then removes them again. **Only for a test server**: it refuses the public one. |
+| `optroy_netcheck sockets` | Tests how the game's Xbox socket calls are translated to this PC's sockets (addresses, byte order, error codes, options), on 127.0.0.1 only. |
+| `optroy_netcheck upnp` | Finds your router and checks that it lets this PC open a port (opens and closes test port UDP 36099). |
+| `optroy_netcheck upnp-selftest <url> <ssdp port> [<url>]` | Tests router port opening against `mock_igd.py` (see below). |
 
 Add `--verbose` to see every request.
 
@@ -26,6 +29,14 @@ packages):
 ```
 python3 tools/netcheck/mock_server.py --port 36000
 optroy_netcheck selftest http://127.0.0.1:36000
+```
+
+`mock_igd.py` imitates a home router with UPnP (SSDP answers on a local UDP port):
+
+```
+python3 tools/netcheck/mock_igd.py --port 5000 --ssdp-port 1901 --conflict-port 7777 &
+python3 tools/netcheck/mock_igd.py --port 5001 --ssdp-port 1902 --permanent-only &
+optroy_netcheck upnp-selftest http://127.0.0.1:5000/rootDesc.xml 1901 http://127.0.0.1:5001/rootDesc.xml
 ```
 
 ## Building

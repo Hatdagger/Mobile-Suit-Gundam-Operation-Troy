@@ -33,6 +33,7 @@
 
 #include <rex/kernel/xam/live/live_api.h>
 #include <rex/kernel/xam/live/live_identity.h>
+#include <rex/kernel/xam/live/live_upnp.h>
 
 namespace rex::kernel::xam::live {
 
@@ -97,6 +98,11 @@ class LiveService {
   bool ConnectOnce();
   void Broadcast(bool connected);
   void WaitForFirstAttempt();
+
+  // UPnP: open the ports game sockets bind (online mode with upnp = true).
+  void StartUpnp();
+  void StopUpnp();
+  std::unique_ptr<Upnp> upnp_;
 
   std::atomic<bool> started_{false};
   NetworkMode mode_ = NetworkMode::kOffline;

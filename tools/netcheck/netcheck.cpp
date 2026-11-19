@@ -8,19 +8,29 @@
 //   optroy_netcheck selftest <server>  Full create/search/join/leave test against a TEST
 //                                      server such as tools/netcheck/mock_server.py.
 //                                      Refuses the public server (it would leave test data).
+//   optroy_netcheck sockets            Tests the Xbox socket translation on this PC (loopback).
+//   optroy_netcheck upnp-selftest <description URL> <ssdp port> [<permanent-only URL>]
+//                                      Tests router port opening against mock_igd.py.
+//   optroy_netcheck upnp               Finds this PC's router and shows what UPnP allows
+//                                      (opens and closes one test port).
 //
 // [server] defaults to the public Xenia Netplay server. Add --verbose for every request.
 
 #include <rex/kernel/xam/live/live_api.h>
 #include <rex/kernel/xam/live/live_identity.h>
 #include <rex/kernel/xam/live/live_properties.h>
+#include <rex/kernel/xam/live/live_upnp.h>
+#include <rex/system/xsocket_native.h>
 #include <rex/net/http.h>
 
+#include <chrono>
 #include <cstdio>
+#include <functional>
 #include <filesystem>
 #include <cstring>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace rex::kernel::xam::live;
@@ -335,6 +345,277 @@ int RunSelftest(const std::string& server) {
   return g_failures ? 1 : 0;
 }
 
+
+// --- sockets --------------------------------------------------------------------
+
+namespace sock = rex::system::sock;
+
+uint32_t Be32(const uint8_t* p) {
+  return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
+}
+
+void PutBe32(uint8_t* p, uint32_t v) {
+  p[0] = uint8_t(v >> 24);
+  p[1] = uint8_t(v >> 16);
+  p[2] = uint8_t(v >> 8);
+  p[3] = uint8_t(v);
+}
+
+constexpr uint32_t kLoopback = 0x7F000001;  // 127.0.0.1 as the game sees it
+
+int RunSockets() {
+  std::printf("UDP\n");
+  sock::Handle a = sock::Open(2, sock::kXSockDgram, 17);
+  sock::Handle b = sock::Open(2, sock::kXSockDgram, 254);  // VDP becomes UDP
+  Expect(a != sock::kInvalidHandle && b != sock::kInvalidHandle, "open UDP and VDP sockets");
+  Expect(sock::Bind(a, {kLoopback, 0}) == 0, "bind to 127.0.0.1, any port");
+  sock::Endpoint name_a;
+  Expect(sock::GetSockName(a, &name_a) == 0 && name_a.ip == kLoopback && name_a.port != 0,
+         "getsockname gives 127.0.0.1 and a port (not byte-swapped)");
+  Expect(sock::Bind(b, {0, 0}) == 0, "bind second socket to any address");
+
+  const char hello[] = "hello xbox";
+  Expect(sock::SendTo(b, hello, sizeof(hello), 0, &name_a) == int(sizeof(hello)),
+         "sendto reaches the address and port given as numbers");
+  sock::Endpoint name_b;
+  sock::GetSockName(b, &name_b);
+  char buffer[64] = {};
+  sock::Endpoint from;
+  int got = sock::RecvFrom(a, buffer, sizeof(buffer), 0, &from);
+  Expect(got == int(sizeof(hello)) && std::memcmp(buffer, hello, sizeof(hello)) == 0,
+         "recvfrom gets the data");
+  Expect(from.ip == kLoopback && from.port == name_b.port,
+         "recvfrom reports the sender's address and port correctly");
+
+  uint8_t on[4];
+  PutBe32(on, 1);
+  Expect(sock::IoControl(a, sock::kXFionbio, on) == 0, "FIONBIO (big-endian 1) makes it non-blocking");
+  got = sock::RecvFrom(a, buffer, sizeof(buffer), 0, &from);
+  Expect(got == -1 && sock::LastError() == sock::kWsaEWOULDBLOCK,
+         "empty non-blocking receive fails with WSAEWOULDBLOCK (10035), got " +
+             std::to_string(sock::LastError()));
+
+  sock::SendTo(b, hello, sizeof(hello), 0, &name_a);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  uint8_t available[4] = {};
+  const bool fionread_ok = sock::IoControl(a, sock::kXFionread, available) == 0;
+  Expect(fionread_ok && Be32(available) >= sizeof(hello),
+         "FIONREAD answers big-endian (" + std::to_string(Be32(available)) + " bytes)");
+  sock::RecvFrom(a, buffer, sizeof(buffer), 0, nullptr);
+
+  uint8_t value[4];
+  uint32_t len = 4;
+  PutBe32(value, 65536);
+  Expect(sock::SetOption(a, sock::kXSolSocket, 0x1002, value, 4) == 0,
+         "SO_RCVBUF set with a big-endian value");
+  std::memset(value, 0, 4);
+  const bool rcvbuf_ok = sock::GetOption(a, sock::kXSolSocket, 0x1002, value, &len) == 0;
+  Expect(rcvbuf_ok && len == 4 && Be32(value) >= 65536 && Be32(value) < 16 * 1024 * 1024,
+         "SO_RCVBUF reads back big-endian (" + std::to_string(Be32(value)) + ")");
+  len = 4;
+  Expect(sock::GetOption(a, sock::kXSolSocket, 0x1008, value, &len) == 0 && Be32(value) == 2,
+         "SO_TYPE reads 2 (datagram)");
+  PutBe32(value, 1);
+  Expect(sock::SetOption(a, sock::kXSolSocket, sock::kXSoBroadcast, value, 4) == 0,
+         "SO_BROADCAST on");
+  len = 4;
+  Expect(sock::GetOption(a, sock::kXSolSocket, sock::kXSoBroadcast, value, &len) == 0 &&
+             Be32(value) != 0,
+         "SO_BROADCAST reads back on");
+  uint8_t small[1] = {};
+  len = 1;
+  Expect(sock::GetOption(a, sock::kXSolSocket, 0x1008, small, &len) == 0 && len == 1 &&
+             small[0] == 2,
+         "a 1-byte buffer gets the low byte");
+  PutBe32(value, 1500);
+  Expect(sock::SetOption(a, sock::kXSolSocket, 0x1006, value, 4) == 0, "SO_RCVTIMEO 1500 ms");
+  len = 4;
+  const bool timeo_ok = sock::GetOption(a, sock::kXSolSocket, 0x1006, value, &len) == 0;
+  Expect(timeo_ok && Be32(value) >= 1500 && Be32(value) <= 1510,
+         "SO_RCVTIMEO reads back 1500 ms (" + std::to_string(Be32(value)) + ")");
+  Expect(sock::SetOption(a, sock::kXSolSocket, sock::kXSoMarkInsecure, value, 4) == 0,
+         "Xbox security option accepted");
+  Expect(sock::SetOption(a, sock::kXSolSocket, 0x4242, value, 4) == -1 &&
+             sock::LastError() == sock::kWsaENOPROTOOPT,
+         "unknown option fails with WSAENOPROTOOPT");
+  PutBe32(value, 1);
+  Expect(sock::SetOption(a, sock::kXSolSocket, ~sock::kXSoReuseAddr, value, 4) == 0,
+         "SO_EXCLUSIVEADDRUSE accepted");
+
+  sock::Close(a);
+  sock::Close(b);
+
+  std::printf("TCP\n");
+  sock::Handle server = sock::Open(2, sock::kXSockStream, 6);
+  sock::Handle client = sock::Open(2, sock::kXSockStream, 6);
+  Expect(sock::Bind(server, {kLoopback, 0}) == 0 && sock::Listen(server, 4) == 0, "listen");
+  sock::Endpoint server_name;
+  sock::GetSockName(server, &server_name);
+  PutBe32(on, 1);
+  sock::IoControl(client, sock::kXFionbio, on);
+  int c = sock::Connect(client, server_name);
+  Expect(c == 0 || sock::LastError() == sock::kWsaEWOULDBLOCK,
+         "non-blocking connect returns 0 or WSAEWOULDBLOCK (got " + std::to_string(sock::LastError()) +
+             ")");
+  sock::Endpoint peer;
+  sock::Handle accepted = sock::Accept(server, &peer);
+  Expect(accepted != sock::kInvalidHandle && peer.ip == kLoopback, "accept reports 127.0.0.1");
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  len = 4;
+  Expect(sock::GetOption(client, sock::kXSolSocket, 0x1007, value, &len) == 0 && Be32(value) == 0,
+         "SO_ERROR is 0 after connecting");
+  sock::Endpoint client_peer;
+  Expect(sock::GetPeerName(client, &client_peer) == 0 && client_peer.port == server_name.port,
+         "getpeername gives the server's port");
+  uint8_t linger_value[4] = {0, 1, 0, 5};
+  Expect(sock::SetOption(client, sock::kXSolSocket, sock::kXSoLinger, linger_value, 4) == 0,
+         "SO_LINGER (two big-endian u16) set");
+  uint8_t linger_back[4] = {};
+  len = 4;
+  Expect(sock::GetOption(client, sock::kXSolSocket, sock::kXSoLinger, linger_back, &len) == 0 &&
+             linger_back[1] == 1 && linger_back[3] == 5,
+         "SO_LINGER reads back on, 5 s");
+  PutBe32(value, 1);
+  Expect(sock::SetOption(client, sock::kXIpprotoTcp, 1, value, 4) == 0, "TCP_NODELAY on");
+  Expect(sock::Send(client, hello, sizeof(hello), 0) == int(sizeof(hello)), "send");
+  std::memset(buffer, 0, sizeof(buffer));
+  got = sock::Recv(accepted, buffer, sizeof(buffer), 0);
+  Expect(got == int(sizeof(hello)) && std::strcmp(buffer, hello) == 0, "recv");
+  sock::Close(accepted);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // Sending to a closed peer must fail with an error, not end the program (SIGPIPE).
+  sock::Send(client, hello, sizeof(hello), 0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  int dead = sock::Send(client, hello, sizeof(hello), 0);
+  Expect(dead == -1 || dead == int(sizeof(hello)), "send to a closed peer doesn't crash");
+  sock::Close(client);
+  sock::Close(server);
+  Expect(sock::Close(server) == -1, "closing twice fails cleanly");
+
+  std::printf("%s\n", g_failures ? "SOME CHECKS FAILED" : "All socket checks passed.");
+  return g_failures ? 1 : 0;
+}
+
+// --- upnp -----------------------------------------------------------------------
+
+// Mappings on the mock router: "UDP:1000" entries from GET /mappings.
+std::string MockMappings(const std::string& description_url) {
+  rex::net::HttpRequest request;
+  request.url = description_url.substr(0, description_url.rfind('/')) + "/mappings";
+  return rex::net::HttpSend(request).body;
+}
+
+bool WaitFor(const std::function<bool()>& condition) {
+  for (int i = 0; i < 60; ++i) {
+    if (condition()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  return false;
+}
+
+bool HasMapping(const std::string& listing, const std::string& protocol, int port) {
+  return listing.find("\"protocol\": \"" + protocol + "\", \"port\": " + std::to_string(port) +
+                      ",") != std::string::npos;
+}
+
+int RunUpnpSelftest(const std::string& root, uint16_t ssdp_port, const std::string& permanent_root) {
+  std::printf("Parsing\n");
+  Expect(Upnp::LocationFromSsdp("HTTP/1.1 200 OK\r\nST: x\r\nlocation: http://10.0.0.1:1900/a.xml "
+                                "\r\n\r\n") == "http://10.0.0.1:1900/a.xml",
+         "LOCATION header found in an SSDP answer (any case)");
+  const auto service = Upnp::FindService(
+      "<root><URLBase>http://10.0.0.1:5000/</URLBase><device><serviceList><service>"
+      "<serviceType>urn:schemas-upnp-org:service:WANPPPConnection:1</serviceType>"
+      "<controlURL>/ppp</controlURL></service><service>"
+      "<serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType>"
+      "<controlURL>/ip</controlURL></service></serviceList></device></root>",
+      "http://10.0.0.1:5000/desc.xml");
+  Expect(service.type == "urn:schemas-upnp-org:service:WANIPConnection:1" &&
+             service.control_url == "http://10.0.0.1:5000/ip",
+         "WANIPConnection preferred over WANPPPConnection; URLBase used");
+
+  std::printf("Router at a known address (upnp_root)\n");
+  {
+    UpnpConfig config;
+    config.root_url = root;
+    Upnp upnp(config, PrintSink());
+    Expect(upnp.Discover(), "router found");
+    Expect(upnp.control_url().ends_with("/ctl/IPConn"), "relative control URL resolved: " +
+                                                            upnp.control_url());
+    Expect(!upnp.local_ip().empty(), "this PC's address known: " + MaskIp(upnp.local_ip()));
+    Expect(upnp.ExternalIp() == "203.0.113.7", "router's public address read");
+    Expect(upnp.AddMapping(1000, "UDP") == 0, "open UDP port 1000");
+    const std::string listing = MockMappings(root);
+    Expect(HasMapping(listing, "UDP", 1000) && listing.find("\"lease\": 3600") != std::string::npos,
+           "router lists UDP 1000 with a 1 hour lease");
+    Expect(upnp.AddMapping(7777, "UDP") == kUpnpConflict,
+           "a port used by another device is reported (718)");
+    Expect(upnp.DeleteMapping(1000, "UDP") == 0, "close UDP port 1000");
+    Expect(upnp.DeleteMapping(1000, "UDP") == 714, "closing it again: router says no such entry");
+  }
+
+  std::printf("Router found by SSDP, ports opened in the background\n");
+  {
+    UpnpConfig config;
+    config.ssdp_address = "127.0.0.1";
+    config.ssdp_port = ssdp_port;
+    config.discover_ms = 800;
+    Upnp upnp(config, PrintSink());
+    Expect(upnp.Discover(), "router answers the SSDP search");
+    upnp.OpenAsync(1000, "UDP");
+    upnp.OpenAsync(1000, "UDP");  // two game sockets, same port
+    upnp.OpenAsync(3075, "TCP");
+    Expect(WaitFor([&] {
+             const std::string l = MockMappings(root);
+             return HasMapping(l, "UDP", 1000) && HasMapping(l, "TCP", 3075);
+           }),
+           "UDP 1000 and TCP 3075 opened in the background");
+    upnp.CloseAsync(1000, "UDP");
+    upnp.CloseAsync(3075, "TCP");
+    Expect(WaitFor([&] { return !HasMapping(MockMappings(root), "TCP", 3075); }),
+           "TCP 3075 closed with its socket");
+    Expect(HasMapping(MockMappings(root), "UDP", 1000),
+           "UDP 1000 stays open while the second socket uses it");
+    upnp.Shutdown();
+    Expect(!HasMapping(MockMappings(root), "UDP", 1000), "everything closed when the game exits");
+  }
+
+  if (!permanent_root.empty()) {
+    std::printf("Router that only allows permanent mappings\n");
+    UpnpConfig config;
+    config.root_url = permanent_root;
+    Upnp upnp(config, PrintSink());
+    Expect(upnp.AddMapping(1001, "UDP") == 0, "port opened after retrying without a lease (725)");
+    Expect(MockMappings(permanent_root).find("\"lease\": 0") != std::string::npos,
+           "router lists it as permanent");
+    upnp.Shutdown();
+    Expect(upnp.mapped().empty() && !HasMapping(MockMappings(permanent_root), "UDP", 1001),
+           "removed again on exit");
+  }
+
+  std::printf("%s\n", g_failures ? "SOME CHECKS FAILED" : "All UPnP checks passed.");
+  return g_failures ? 1 : 0;
+}
+
+int RunUpnp() {
+  g_verbose = true;
+  Upnp upnp(UpnpConfig{}, PrintSink());
+  if (!upnp.Discover()) {
+    std::printf("No router with UPnP found. Players may still connect if ports are forwarded by hand.\n");
+    return 1;
+  }
+  std::printf("Router: %s\nThis PC: %s\nPublic address: %s\n", upnp.service_type().c_str(),
+              MaskIp(upnp.local_ip()).c_str(), MaskIp(upnp.ExternalIp()).c_str());
+  const int added = upnp.AddMapping(36099, "UDP");
+  Expect(added == 0, "the router lets this PC open a port (test port UDP 36099)");
+  if (added == 0) {
+    Expect(upnp.DeleteMapping(36099, "UDP") == 0, "and close it again");
+  }
+  return g_failures ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -362,6 +643,22 @@ int main(int argc, char** argv) {
     }
     return RunSelftest(server);
   }
-  std::printf("Usage: optroy_netcheck check|sessions|selftest [server] [--verbose]\n");
+  if (command == "sockets") {
+    return RunSockets();
+  }
+  if (command == "upnp") {
+    return RunUpnp();
+  }
+  if (command == "upnp-selftest") {
+    if (args.size() < 3) {
+      std::printf("upnp-selftest needs the mock router's description URL and SSDP port, e.g.\n"
+                  "  upnp-selftest http://127.0.0.1:5000/rootDesc.xml 1901\n");
+      return 2;
+    }
+    return RunUpnpSelftest(args[1], static_cast<uint16_t>(std::stoi(args[2])),
+                           args.size() > 3 ? args[3] : std::string());
+  }
+  std::printf("Usage: optroy_netcheck check|sessions|selftest|sockets|upnp|upnp-selftest "
+              "[server] [--verbose]\n");
   return 2;
 }
