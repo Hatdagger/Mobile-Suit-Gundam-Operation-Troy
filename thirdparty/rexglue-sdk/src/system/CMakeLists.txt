@@ -71,6 +71,9 @@ rex_target_pch(rexruntime
 target_include_directories(rexruntime PUBLIC
     $<BUILD_INTERFACE:${REXGLUE_ROOT}/include>
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
+    # Public SDK headers (rex/ui/style.h) include <imgui.h>. The installed package
+    # ships imgui's headers in include/; a source-tree build needs this path.
+    $<BUILD_INTERFACE:${REXGLUE_ROOT}/thirdparty/imgui>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_include_directories(rexruntime PRIVATE
