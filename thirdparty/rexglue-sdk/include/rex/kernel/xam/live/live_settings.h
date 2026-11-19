@@ -8,6 +8,7 @@
  *   api_address  = "https://xenia-netplay-2a0298c0e3f4.herokuapp.com/"
  *                              # or a server on your network, e.g. "192.168.1.20:36000"
  *   upnp         = false       # open ports on the router automatically
+ *   upnp_root    = ""          # router description URL; empty = find it automatically
  *   log_mask_ips = true        # hide the last part of IP addresses in the log
  *   gamertag     = "Player"    # your name for other players (15 characters at most)
  *
@@ -25,6 +26,7 @@
 REXCVAR_DECLARE(std::string, network_mode);
 REXCVAR_DECLARE(std::string, api_address);
 REXCVAR_DECLARE(bool, upnp);
+REXCVAR_DECLARE(std::string, upnp_root);
 REXCVAR_DECLARE(bool, log_mask_ips);
 REXCVAR_DECLARE(std::string, gamertag);
 
