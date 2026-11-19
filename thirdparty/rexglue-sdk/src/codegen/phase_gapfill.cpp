@@ -119,7 +119,10 @@ bool looksLikeExceptionData(const BinaryView& binary, const FunctionGraph& graph
   return false;
 }
 
-void gapFillCodeRegions(CodegenContext& ctx) {
+// `skip`: segment starts not to register again (later passes only). `added`: receives the
+// entry points registered by this call.
+size_t gapFillCodeRegions(CodegenContext& ctx, const std::unordered_set<uint32_t>* skip = nullptr,
+                          std::vector<uint32_t>* added = nullptr) {
   REXCODEGEN_TRACE("Analyze: checking for uncovered code regions...");
 
   auto& graph = ctx.graph;
@@ -153,8 +156,13 @@ void gapFillCodeRegions(CodegenContext& ctx) {
       if (looksLikeExceptionData(binary, graph, segment.start))
         continue;
 
+      if (skip && skip->contains(segment.start))
+        continue;
+
       uint32_t segmentSize = segment.size();
       graph.addFunction(segment.start, segmentSize, FunctionAuthority::GAP_FILL, false);
+      if (added)
+        added->push_back(segment.start);
 
       REXCODEGEN_TRACE("GapFill: registered sub_{:08X} (0x{:08X}-0x{:08X}, {} bytes)",
                        segment.start, segment.start, segment.end, segmentSize);
@@ -170,6 +178,7 @@ void gapFillCodeRegions(CodegenContext& ctx) {
   } else {
     REXCODEGEN_TRACE("Analyze: no uncovered regions found");
   }
+  return segmentsCreated;
 }
 
 //=============================================================================
@@ -226,6 +235,42 @@ VoidResult GapFill(CodegenContext& ctx, ProgressReporter* reporter) {
   REXCODEGEN_TRACE("Analyze: discovered blocks for {} gap-filled functions", discovered);
 
   cleanupAbsorbedGapFills(ctx);
+
+  // Extra passes for code the first pass left unclaimed. A segment is only split at a
+  // tail call whose target is already known, so a run of tiny stubs ("addi r3,r3,-N;
+  // b target": this-adjusting thunks reached only through data tables) whose targets
+  // were not known yet became one segment; discovery kept only the first stub and the
+  // others were never generated ("call to invalid or unregistered function" at run
+  // time). Discovery has made those targets known now, so the split works.
+  //
+  // These passes only add: every existing function counts as a known callable (so a
+  // new stub's branch to one is a tail call, not an absorbed block), nothing that
+  // existed before is removed, and each address is tried once.
+  constexpr int kMaxExtraPasses = 8;
+  std::unordered_set<uint32_t> tried;
+  for (int pass = 0; pass < kMaxExtraPasses; ++pass) {
+    std::vector<uint32_t> added;
+    gapFillCodeRegions(ctx, &tried, &added);
+    if (added.empty())
+      break;
+    tried.insert(added.begin(), added.end());
+
+    discoverPendingFunctions(ctx, buildKnownFunctions(ctx.graph, /*excludeGapFill=*/false));
+
+    // Drop a new function only if it turned out to lie inside another function's blocks.
+    size_t dropped = 0;
+    for (uint32_t entry : added) {
+      for (const auto& [otherAddr, otherNode] : ctx.graph.functions()) {
+        if (otherAddr != entry && otherNode->containsAddress(entry)) {
+          ctx.graph.removeFunction(entry);
+          ++dropped;
+          break;
+        }
+      }
+    }
+    REXCODEGEN_DEBUG("GapFill extra pass {}: {} new functions, {} dropped as inside others",
+                     pass + 1, added.size() - dropped, dropped);
+  }
 
   return Ok();
 }

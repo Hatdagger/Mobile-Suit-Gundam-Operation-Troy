@@ -118,6 +118,9 @@ add_custom_command(
     OUTPUT "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp"
            {{ cmake_var("REXGLUE_ENTRYPOINT_GENERATED_SOURCES") }}
     COMMAND $<TARGET_FILE:rex::rexglue> codegen {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ names.snake_case }}_manifest.toml
+    # Re-run when the codegen tool itself is rebuilt (an SDK update can change its
+    # output for the same inputs; the stamp check skips work when nothing changed).
+    DEPENDS rex::rexglue
     DEPFILE "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.d"
     WORKING_DIRECTORY {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}
     COMMENT "Generating recompiled code for {{ names.snake_case }}"

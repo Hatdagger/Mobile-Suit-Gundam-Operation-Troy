@@ -26,6 +26,12 @@ namespace rex::codegen {
 /// Bump when the stamp layout changes.
 constexpr int kStampVersion = 1;
 
+/// Bump when analysis or code generation changes the output for the same inputs, so
+/// existing projects regenerate after an SDK update (the SDK version string alone may
+/// not change, e.g. in a vendored copy).
+///   2: GapFill extra passes (stubs left unclaimed by the first pass)
+constexpr int kCodegenRevision = 2;
+
 std::optional<OutputStamp> OutputStamp::Load(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in)
@@ -71,6 +77,7 @@ std::string ComputeInputFingerprint(std::span<const std::filesystem::path> input
   accumulator += "sdk=";
   accumulator += sdkVersion;
   accumulator += '\n';
+  accumulator += fmt::format("codegen-revision={}\n", kCodegenRevision);
 
   for (const auto& flag : flagValues) {
     accumulator += "flag=";

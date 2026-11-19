@@ -118,6 +118,9 @@ add_custom_command(
     OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/codegen.build.stamp"
            ${REXGLUE_ENTRYPOINT_GENERATED_SOURCES}
     COMMAND $<TARGET_FILE:rex::rexglue> codegen ${CMAKE_CURRENT_SOURCE_DIR}/gundam_operation_troy_manifest.toml
+    # Re-run when the codegen tool itself is rebuilt (an SDK update can change its
+    # output for the same inputs; the stamp check skips work when nothing changed).
+    DEPENDS rex::rexglue
     DEPFILE "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/codegen.d"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Generating recompiled code for gundam_operation_troy"
