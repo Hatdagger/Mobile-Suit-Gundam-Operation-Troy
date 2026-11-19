@@ -1,0 +1,50 @@
+# Builds the launcher ("Operation Troy.exe"). It holds no game code or assets.
+# Download it from the run's Artifacts section (Actions tab -> latest "Launcher" run).
+name: Launcher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "launcher/**"
+      - ".github/workflows/launcher.yml"
+  pull_request:
+    paths:
+      - "launcher/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get SDL3 and Dear ImGui (the only SDK libraries the launcher uses)
+        run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui
+
+      - name: Configure
+        run: cmake -S launcher -B out/launcher -A x64
+
+      - name: Build
+        run: cmake --build out/launcher --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "out/launcher/Release/Operation Troy.exe" dist/
+          New-Item -ItemType Directory -Force -Path dist/licenses | Out-Null
+          Copy-Item launcher/fonts/OFL-*.txt dist/licenses/
+          Copy-Item thirdparty/rexglue-sdk/thirdparty/sdl3/LICENSE.txt dist/licenses/SDL3-LICENSE.txt
+          Copy-Item thirdparty/rexglue-sdk/thirdparty/imgui/LICENSE.txt dist/licenses/DearImGui-LICENSE.txt
+          Copy-Item launcher/README.md dist/README-launcher.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OperationTroy-Launcher-Windows-x64
+          path: dist/
+          if-no-files-found: error

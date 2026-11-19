@@ -33,6 +33,11 @@ compile_commands.json
 /saves/
 /cache/
 
+# The launcher, if you put it in this folder, and what it keeps beside itself
+/*.exe
+/RecompData/
+/Saves/
+
 # Editor / OS clutter
 .vs/
 .vscode/

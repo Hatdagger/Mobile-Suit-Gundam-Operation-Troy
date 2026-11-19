@@ -31,7 +31,9 @@
    address as a setting so anyone can switch to their own server.
 4. **LAN:** the host runs the same server locally (ideally built in), and players on
    the same network find each other's matches.
-5. **Front end:** to be decided (in-game settings vs. a separate launcher).
+5. **Front end:** a full, controller-driven launcher (`launcher/`): finds the player's
+   copy, checks and installs build tools, extracts the game files, builds, plays, and
+   holds the settings. Built by GitHub Actions; contains no game code or assets.
 
 ## Status of the Xbox Live layer in ReXGlue v0.10.0
 

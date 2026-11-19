@@ -16,7 +16,17 @@ as a disc image (`.iso`) or a Games on Demand (GOD) folder dumped from your own 
 
 Do not open issues or pull requests that contain game files, and do not ask for them.
 
-## Getting the files the build needs
+## The launcher
+
+**`Operation Troy.exe`** sets everything up and is used with a controller (keyboard and
+mouse work too): it finds your copy of the game, checks the build tools, extracts the game
+files, builds the PC version on your PC, and starts it. It contains no game files.
+Get it from the latest [Launcher run](../../actions/workflows/launcher.yml) (Artifacts), or
+from Releases once one is published. See [launcher/README.md](launcher/README.md).
+
+Put it in your copy of this repository (or in an empty folder) and run it.
+
+## Getting the files the build needs (without the launcher)
 
 The build only needs the game's program files. A helper script pulls them out of your copy:
 
@@ -28,7 +38,8 @@ This writes `game/default.xex` and `game/Contents/dlls/PathEngine_Xenon_Release.
 Add `--all` to extract every game file (needed to actually run the game).
 The `game/` folder is ignored by git, so it can never be committed by accident.
 
-Building instructions will be added once the first build works.
+Or double-click `build.bat`, which does the same as the launcher's setup in a console window
+(it needs Python for the extraction step). A log is written to `out\build.log`.
 
 ## How online play will work
 

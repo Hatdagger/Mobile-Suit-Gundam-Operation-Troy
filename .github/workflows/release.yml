@@ -1,0 +1,62 @@
+# Publishes a release when a version tag (for example v0.1.0) is pushed:
+#  - "Operation Troy.exe", the launcher
+#  - optroy-source.zip, the recomp's source with the SDK's helper libraries included
+#    (GitHub's own source zips leave those out). The launcher downloads it when it is
+#    used outside a git copy of the repository.
+# Neither contains game code or game assets: players build from their own copy.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  launcher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui
+      - run: cmake -S launcher -B out/launcher -A x64
+      - run: cmake --build out/launcher --config Release --parallel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher
+          path: out/launcher/Release/Operation Troy.exe
+          if-no-files-found: error
+
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - name: Make optroy-source.zip
+        run: |
+          echo "${GITHUB_REF_NAME}" > VERSION
+          zip -qr optroy-source.zip . -x '.git' '.git/*' '*/.git' '*/.git/*' '.github/*'
+          ls -la optroy-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source
+          path: optroy-source.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [launcher, source]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" \
+            --notes "Download **Operation Troy.exe**, put it in an empty folder and run it. It finds your own copy of the game, checks the build tools, and builds the PC version on your computer. No game files are included." \
+            "dist/Operation Troy.exe#Operation Troy.exe" dist/optroy-source.zip
