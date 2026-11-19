@@ -24,6 +24,22 @@ it works from your own copy of the game, and the PC version is built on your PC.
 Both the original Japanese game and the fan English patch work, as a GOD folder
 or an `.iso` (the patch only changes menu files, not the game's code).
 
+## Online and LAN play
+
+**ONLINE** on the main menu (after setup):
+
+- **PLAY ONLINE**: the public Xenia Netplay server. Host or find matches in the game's own
+  online menu; Xenia Netplay players appear there too. **ROUTER PORTS: AUTO** asks your router
+  to let other players in (UPnP); turn it off if your router has no UPnP.
+- **HOST A LAN GAME**: runs a small match server in the launcher (TCP 36000, LAN search on
+  UDP 36001) and shows this PC's address. Choose START GAME, then host a match in the game's
+  online menu. Keep the launcher on this screen while playing.
+- **JOIN A LAN GAME**: lists hosts found on your network, recent hosts, and ENTER AN ADDRESS
+  (digit by digit with a controller, or typed) for a VPN such as Tailscale or Radmin VPN.
+
+PLAY on the main menu always starts the game offline. The first time, Windows may ask whether
+Operation Troy may use the network: allow it on private networks.
+
 ## Player name
 
 Your name in the game and in online matches. Set it in **Settings, PLAYER** (the

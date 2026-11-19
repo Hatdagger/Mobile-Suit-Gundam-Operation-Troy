@@ -5,6 +5,7 @@
 //   optroy_launcher_tool tools
 //   optroy_launcher_tool name <settings .toml> <text>   (types <text> key by key, saves it as the player name)
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -12,6 +13,8 @@
 
 #include "game_config.h"
 #include "game_finder.h"
+#include "lan_discovery.h"
+#include "lobby_server.h"
 #include "gdf.h"
 #include "player_name.h"
 #include "subprocess.h"
@@ -21,6 +24,38 @@
 int main(int argc, char** argv) {
   if (argc < 2) return 2;
   const std::string cmd = argv[1];
+  if (cmd == "lan-server" && argc >= 3) {
+    // optroy_launcher_tool lan-server <port> [discovery port] [seconds]
+    lobby::Server server;
+    std::string err;
+    const uint16_t dport = argc >= 4 ? static_cast<uint16_t>(std::atoi(argv[3])) : lan::kDiscoveryPort;
+    if (!server.Start(static_cast<uint16_t>(std::atoi(argv[2])), "Test Host", &err, dport)) {
+      std::printf("start failed: %s\n", err.c_str());
+      return 1;
+    }
+    std::printf("LAN server on port %s\n", argv[2]);
+    std::fflush(stdout);
+    const int seconds = argc >= 5 ? std::atoi(argv[4]) : 3600;
+    for (int i = 0; i < seconds * 10; ++i) SDL_Delay(100);
+    auto st = server.status();
+    std::printf("players=%zu matches=%d requests=%llu\n", st.players.size(), st.matches,
+                (unsigned long long)st.requests);
+    server.Stop();
+    return 0;
+  }
+  if (cmd == "lan-scan" && argc >= 3) {
+    // optroy_launcher_tool lan-scan <discovery port> [target address]
+    lan::Scanner scanner;
+    scanner.Start(static_cast<uint16_t>(std::atoi(argv[2])), argc >= 4 ? argv[3] : "");
+    SDL_Delay(2500);
+    auto hosts = scanner.hosts();
+    scanner.Stop();
+    for (const auto& h : hosts)
+      std::printf("host name=[%s] address=%s port=%u players=%d matches=%d version=%s\n", h.name.c_str(),
+                  h.address.c_str(), h.port, h.players, h.matches, h.version.c_str());
+    std::printf("hosts=%zu\n", hosts.size());
+    return hosts.empty() ? 1 : 0;
+  }
   if (cmd == "extract" && argc == 4) {
     gdf::Source src;
     std::string err;

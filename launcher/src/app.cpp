@@ -109,7 +109,7 @@ void App::HandleEvent(const SDL_Event& e) {
       RequestQuit();
       break;
     case SDL_EVENT_TEXT_INPUT:
-      if (screen_ == Screen::Name && !dialog_ && e.text.text) {
+      if ((screen_ == Screen::Name || screen_ == Screen::Address) && !dialog_ && e.text.text) {
         using_gamepad_ = false;
         name_typed_ += e.text.text;
       }
@@ -117,7 +117,7 @@ void App::HandleEvent(const SDL_Event& e) {
     case SDL_EVENT_KEY_DOWN: {
       using_gamepad_ = false;
       const bool first = !e.key.repeat;
-      if (screen_ == Screen::Name && !dialog_) {
+      if ((screen_ == Screen::Name || screen_ == Screen::Address) && !dialog_) {
         // Letters, digits and space arrive as text (SDL_EVENT_TEXT_INPUT), so only
         // the arrows and editing keys are actions here.
         switch (e.key.key) {
@@ -298,6 +298,10 @@ void App::Frame(float dt) {
     case Screen::Log: DrawLog(dt); break;
     case Screen::Running: DrawRunning(dt); break;
     case Screen::Name: DrawName(dt); break;
+    case Screen::Online: DrawOnline(dt); break;
+    case Screen::Host: DrawHost(dt); break;
+    case Screen::Join: DrawJoin(dt); break;
+    case Screen::Address: DrawAddress(dt); break;
   }
   if (screen_fade_ < 1.f) {
     ui::Rect(-200, 104, ui::kCanvasW + 400, 556, ui::WithAlpha(ui::col::Rgba(3, 6, 11), 1.f - screen_fade_));
@@ -335,12 +339,19 @@ void App::Go(Screen s) {
   // Typing on a physical keyboard only while the name screen is open. Our own
   // on-screen keyboard is used with a controller, so the system's stays hidden.
   if (!demo_ && window_) {
-    if (s == Screen::Name)
+    const bool typing_before = screen_ == Screen::Name || screen_ == Screen::Address;
+    const bool typing_after = s == Screen::Name || s == Screen::Address;
+    if (typing_after && !typing_before)
       SDL_StartTextInput(window_);
-    else if (screen_ == Screen::Name)
+    else if (typing_before && !typing_after)
       SDL_StopTextInput(window_);
   }
   name_typed_.clear();
+  // The LAN scan runs only while JOIN is open.
+  if (!demo_) {
+    if (s == Screen::Join) lan_scanner_.Start();
+    else if (screen_ == Screen::Join && s != Screen::Address) lan_scanner_.Stop();
+  }
   screen_ = s;
   screen_fade_ = demo_ ? 1.f : 0.f;
 }
@@ -766,6 +777,16 @@ void App::RunUpdate() {
 
 // --- Playing -----------------------------------------------------------------------
 
+void App::StartPlay(PlayMode mode, std::string lan_server) {
+  play_mode_ = mode;
+  play_lan_server_ = std::move(lan_server);
+  play_return_ = mode == PlayMode::Offline ? Screen::Main
+                 : mode == PlayMode::Online ? Screen::Online
+                 : mode == PlayMode::LanHost ? Screen::Host
+                                             : Screen::Join;
+  Play();
+}
+
 void App::Play() {
   if (JobRunning()) {
     Toast("Wait for " + job_.title + " to finish");
@@ -783,6 +804,27 @@ void App::Play() {
   proc::Command c;
   c.args = {util::PathStr(layout_.GameExe()), "--game_data_root=" + util::PathStr(layout_.game_dir),
             "--user_data_root=" + util::PathStr(layout_.saves_dir)};
+  // Online settings for this start only (the command line beats the .toml file).
+  switch (play_mode_) {
+    case PlayMode::Offline:
+      c.args.push_back("--network_mode=offline");
+      break;
+    case PlayMode::Online:
+      c.args.push_back("--network_mode=online");
+      c.args.push_back(settings_.GetBool("upnp", true) ? "--upnp" : "--no-upnp");
+      break;
+    case PlayMode::LanHost:
+    case PlayMode::LanJoin:
+      // LAN play is the game's Xbox Live mode with this LAN's own match server.
+      c.args.push_back("--network_mode=online");
+      c.args.push_back("--api_address=http://" + play_lan_server_ + "/");
+      c.args.push_back("--no-upnp");
+      break;
+  }
+  log_.Add("Starting the game: " + std::string(play_mode_ == PlayMode::Offline  ? "offline"
+                                               : play_mode_ == PlayMode::Online ? "online"
+                                               : play_mode_ == PlayMode::LanHost ? "LAN host, server " + play_lan_server_
+                                                                                 : "LAN, server " + play_lan_server_));
   c.cwd = util::PathStr(layout_.build_dir);
   std::string err;
   if (!game_process_.Start(c, &err)) {
@@ -843,7 +885,7 @@ void App::PollGame() {
   SDL_RestoreWindow(window_);
   SDL_RaiseWindow(window_);
   BringToFront(window_);
-  Go(Screen::Main);
+  Go(play_return_);
   if (game_process_.ExitCode() != 0) {
     char code[32];
     std::snprintf(code, sizeof code, "%d (0x%08X)", game_process_.ExitCode(), unsigned(game_process_.ExitCode()));

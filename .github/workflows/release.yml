@@ -18,7 +18,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui
+      - run: git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui thirdparty/rexglue-sdk/thirdparty/rapidjson
       - run: cmake -S launcher -B out/launcher -A x64
       - run: cmake --build out/launcher --config Release --parallel
       - uses: actions/upload-artifact@v4

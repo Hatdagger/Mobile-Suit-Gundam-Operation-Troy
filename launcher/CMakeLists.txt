@@ -9,7 +9,7 @@
 # It needs only the SDL3 and Dear ImGui sources from thirdparty/rexglue-sdk/thirdparty.
 
 cmake_minimum_required(VERSION 3.25)
-project(optroy_launcher VERSION 0.1.6 LANGUAGES C CXX)
+project(optroy_launcher VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,10 +22,11 @@ option(OPTROY_LAUNCHER_HEADLESS
 option(OPTROY_LAUNCHER_TOOL "Also build optroy_launcher_tool (command-line checks of the extractor etc.)" OFF)
 
 set(OPTROY_THIRDPARTY "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/rexglue-sdk/thirdparty")
-if(NOT EXISTS "${OPTROY_THIRDPARTY}/sdl3/CMakeLists.txt" OR NOT EXISTS "${OPTROY_THIRDPARTY}/imgui/imgui.h")
+if(NOT EXISTS "${OPTROY_THIRDPARTY}/sdl3/CMakeLists.txt" OR NOT EXISTS "${OPTROY_THIRDPARTY}/imgui/imgui.h"
+   OR NOT EXISTS "${OPTROY_THIRDPARTY}/rapidjson/include/rapidjson/document.h")
     message(FATAL_ERROR
-        "SDL3 and Dear ImGui sources are missing. From the repository root run:\n"
-        "  git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui")
+        "SDL3, Dear ImGui or rapidjson sources are missing. From the repository root run:\n"
+        "  git submodule update --init --depth 1 thirdparty/rexglue-sdk/thirdparty/sdl3 thirdparty/rexglue-sdk/thirdparty/imgui thirdparty/rexglue-sdk/thirdparty/rapidjson")
 endif()
 
 # --- SDL3: static, only what the launcher uses -----------------------------------
@@ -89,9 +90,13 @@ add_executable(optroy_launcher WIN32
     src/setup_steps.cpp
     src/game_config.cpp
     src/player_name.cpp
+    src/net_util.cpp
+    src/lan_discovery.cpp
+    src/lobby_server.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
 set_target_properties(optroy_launcher PROPERTIES OUTPUT_NAME "Operation Troy")
 target_link_libraries(optroy_launcher PRIVATE launcher_imgui SDL3::SDL3-static)
+target_include_directories(optroy_launcher SYSTEM PRIVATE "${OPTROY_THIRDPARTY}/rapidjson/include")
 target_compile_definitions(optroy_launcher PRIVATE
     OPTROY_LAUNCHER_VERSION="${PROJECT_VERSION}"
     OPTROY_REPO_OWNER="Hatdagger"
@@ -101,7 +106,7 @@ if(OPTROY_LAUNCHER_HEADLESS)
 endif()
 if(WIN32)
     target_compile_definitions(optroy_launcher PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_link_libraries(optroy_launcher PRIVATE shell32 ole32)
+    target_link_libraries(optroy_launcher PRIVATE shell32 ole32 ws2_32 iphlpapi)
 endif()
 if(MSVC)
     target_compile_options(optroy_launcher PRIVATE /W3 /utf-8)
@@ -113,8 +118,13 @@ endif()
 if(OPTROY_LAUNCHER_TOOL)
     add_executable(optroy_launcher_tool tests/tool.cpp src/util.cpp src/subprocess.cpp src/gdf.cpp src/game_finder.cpp
                    src/toolchain.cpp src/setup_steps.cpp src/game_config.cpp src/player_name.cpp
+                   src/net_util.cpp src/lan_discovery.cpp src/lobby_server.cpp
                    "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
     target_include_directories(optroy_launcher_tool PRIVATE src)
+    target_include_directories(optroy_launcher_tool SYSTEM PRIVATE "${OPTROY_THIRDPARTY}/rapidjson/include")
+    if(WIN32)
+        target_link_libraries(optroy_launcher_tool PRIVATE ws2_32 iphlpapi)
+    endif()
     target_compile_definitions(optroy_launcher_tool PRIVATE OPTROY_REPO_OWNER="Hatdagger"
                                OPTROY_REPO_NAME="Mobile-Suit-Gundam-Operation-Troy")
     target_link_libraries(optroy_launcher_tool PRIVATE SDL3::SDL3-static)

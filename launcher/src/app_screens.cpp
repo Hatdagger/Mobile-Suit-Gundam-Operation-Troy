@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "app.h"
+#include "net_util.h"
 #include "imgui.h"
 
 namespace c = ui::col;
@@ -71,12 +72,13 @@ std::string App::HeaderStatus() const { return std::string("LAUNCHER ") + OPTROY
 std::vector<App::MenuItem> App::MainItems() {
   std::vector<MenuItem> v;
   if (SetupComplete())
-    v.push_back({"PLAY", "Start Gundam Operation Troy.", true, [this] { Play(); }});
+    v.push_back({"PLAY", "Start Gundam Operation Troy (offline).", true, [this] { StartPlay(PlayMode::Offline); }});
   else
     v.push_back({"SET UP THE GAME", "Find your copy, extract it and build the PC version. Only needed once.", true,
                  [this] { Go(Screen::Setup); }});
-  v.push_back({"ONLINE", "Online and LAN play are being rebuilt for the PC version. Coming in a later update.",
-               false, nullptr});
+  v.push_back({"ONLINE", SetupComplete() ? "Play online, or host or join a game on your own network (LAN)."
+                                         : "Available after setup.",
+               SetupComplete(), [this] { Go(Screen::Online); }});
   v.push_back({"SETTINGS", "Display options, your player name, and launcher options.", true,
                [this] { Go(Screen::Settings); }});
   v.push_back({"UPDATE",
@@ -120,7 +122,6 @@ void App::DrawMain(float dt) {
     if (sel)
       ui::Text(Font::Body, 15, x + 44, ry + 44, it.enabled ? c::kAccent : c::kTextFaint,
                ui::Fit(Font::Body, 15, it.description, w - 60));
-    if (!it.enabled) ui::Chip(x + w - 26, ry + 24, "LATER", c::kTextFaint);
     if (sel) ui::Triangle(x + w - 18, ry + 24, 12, 0, ui::WithAlpha(c::kAccent, it.enabled ? 1.f : 0.3f));
   }
   if (activate && items[size_t(main_sel_)].enabled && items[size_t(main_sel_)].action) items[size_t(main_sel_)].action();
@@ -956,6 +957,423 @@ void App::DrawRunning(float /*dt*/) {
   ui::Footer("", {});
 }
 
+// --- Online and LAN play -------------------------------------------------------------
+
+void App::DrawMenu(const std::vector<MenuItem>& items, int& sel, float& anim, float x, float y0, float w,
+                   float row_h, float dt) {
+  const int n = int(items.size());
+  if (n == 0) return;
+  sel = std::clamp(sel, 0, n - 1);
+  if (Pressed(Action::Up)) sel = Wrap(sel - 1, n);
+  if (Pressed(Action::Down)) sel = Wrap(sel + 1, n);
+  bool activate = Pressed(Action::Accept);
+  for (int i = 0; i < n; ++i) {
+    if (MouseIn(x, y0 + float(i) * row_h, w, row_h - 8)) {
+      if (MouseMoved()) sel = i;
+      if (Clicked()) {
+        sel = i;
+        activate = true;
+      }
+    }
+  }
+  anim = demo_ ? float(sel) : Approach(anim, float(sel), dt);
+  ui::MenuHighlight(x - 8, y0 + anim * row_h - 2, w, row_h - 10, 1.f);
+  for (int i = 0; i < n; ++i) {
+    const MenuItem& it = items[size_t(i)];
+    const float ry = y0 + float(i) * row_h;
+    const bool is_sel = i == sel;
+    const ImU32 label_col = !it.enabled ? c::kTextFaint : is_sel ? c::kText : c::kTextDim;
+    ui::Text(Font::Heading, 28, x + 14, ry + 4, label_col, it.label);
+    if (is_sel)
+      ui::Text(Font::Body, 15, x + 14, ry + 40, it.enabled ? c::kAccent : c::kTextFaint,
+               ui::Fit(Font::Body, 15, it.description, w - 40));
+    if (is_sel) ui::Triangle(x + w - 18, ry + 22, 12, 0, ui::WithAlpha(c::kAccent, it.enabled ? 1.f : 0.3f));
+  }
+  if (activate && items[size_t(sel)].enabled && items[size_t(sel)].action) items[size_t(sel)].action();
+}
+
+std::vector<App::MenuItem> App::OnlineItems() {
+  std::vector<MenuItem> v;
+  v.push_back({"PLAY ONLINE",
+               "The public Xenia Netplay server. Host or find matches in the game's own online menu.", true,
+               [this] { StartPlay(PlayMode::Online); }});
+  v.push_back({"HOST A LAN GAME", "Run a match server on this PC for players on your network or VPN.", true,
+               [this] { StartHosting(); }});
+  v.push_back({"JOIN A LAN GAME", "Find a PC on your network that is hosting, or type its address.", true,
+               [this] { join_sel_ = 0; Go(Screen::Join); }});
+  const bool upnp = settings_.GetBool("upnp", true);
+  v.push_back({std::string("ROUTER PORTS: ") + (upnp ? "AUTO" : "OFF"),
+               upnp ? "Online play asks your router to let other players in (UPnP). Press to turn off."
+                    : "Off: other players may not reach you unless you forward ports yourself. Press to turn on.",
+               true, [this, upnp] {
+                 settings_.SetBool("upnp", !upnp);
+                 settings_.Save();
+               }});
+  v.push_back({"BACK", "Back to the main menu.", true, [this] { Go(Screen::Main); }});
+  return v;
+}
+
+void App::DrawOnline(float dt) {
+  ui::Header("ONLINE", HeaderStatus(), true);
+  auto items = OnlineItems();
+  if (Pressed(Action::Back)) {
+    Go(Screen::Main);
+    return;
+  }
+  DrawMenu(items, online_sel_, anim_online_, 64, 146, 560, 74, dt);
+
+  const float px = 676, py = 150, pw = 540, ph = 396;
+  ui::Panel(px, py, pw, ph, "HOW IT WORKS");
+  const char* lines[] = {
+      "PLAY ONLINE",
+      "Everyone uses the public Xenia Netplay server. Open the game's own online menu to host a match or "
+      "find one. Xenia Netplay players on the original game appear there too.",
+      "LAN",
+      "One PC chooses HOST A LAN GAME, the others JOIN A LAN GAME. This also works over a VPN such as "
+      "Tailscale or Radmin VPN: join by typing the host's VPN address.",
+      "NAME",
+      "",
+  };
+  float y = py + 26;
+  for (int i = 0; i < 6; i += 2) {
+    ui::TextSpaced(Font::Label, 12, px + 28, y, c::kTextFaint, lines[i], 2.f);
+    const std::string body =
+        i == 4 ? "Other players see you as \"" + (player_name_set_ ? player_name_ : std::string(player_name::kDefault)) +
+                     "\". Change it in SETTINGS, PLAYER."
+               : std::string(lines[i + 1]);
+    y += 20 + ui::TextWrapped(Font::Body, 16, px + 28, y + 20, pw - 56, c::kText, body) + 18;
+  }
+  ui::TextWrapped(Font::Body, 14, px + 4, py + ph + 18, pw - 8, c::kTextFaint,
+                  "The first time, Windows may ask whether Operation Troy may use the network. "
+                  "Allow it on private networks.");
+  ui::Footer("", {{Button::Move, "SELECT"}, {Button::Accept, "OK"}, {Button::Back, "BACK"}});
+}
+
+void App::StartHosting() {
+  host_sel_ = 0;
+  lan_server_error_.clear();
+  if (!demo_ && !lan_server_.running()) {
+    const std::string name = player_name_set_ ? player_name_ : std::string(player_name::kDefault);
+    if (lan_server_.Start(lobby::kDefaultPort, name, &lan_server_error_))
+      log_.Add("LAN server started on port " + std::to_string(lobby::kDefaultPort));
+    else
+      log_.Add("LAN server could not start: " + lan_server_error_);
+  }
+  Go(Screen::Host);
+}
+
+void App::StopHosting() {
+  if (lan_server_.running()) {
+    lan_server_.Stop();
+    log_.Add("LAN server stopped");
+  }
+  Go(Screen::Online);
+}
+
+void App::DrawHost(float dt) {
+  ui::Header("LAN HOST", HeaderStatus(), true);
+  const lobby::Status st = demo_ ? demo_host_status_ : lan_server_.status();
+  const bool ok = st.running;
+  const auto interfaces = demo_ ? std::vector<netu::Interface>{{"192.168.1.20", ""}, {"100.71.12.5", ""}}
+                                : netu::LocalInterfaces();
+  const std::string address = interfaces.empty() ? std::string("127.0.0.1") : interfaces.front().address;
+
+  std::vector<MenuItem> items;
+  if (ok)
+    items.push_back({"START GAME", "Start the game. In its online menu, host a match: the others will see it.", true,
+                     [this, address] { StartPlay(PlayMode::LanHost, address + ":" + std::to_string(lobby::kDefaultPort)); }});
+  items.push_back({"STOP HOSTING", "Stop the match server and go back.", true, [this] { StopHosting(); }});
+  if (Pressed(Action::Back)) {
+    StopHosting();
+    return;
+  }
+  DrawMenu(items, host_sel_, anim_host_, 64, 430, 520, 74, dt);
+
+  // This PC's address.
+  ui::Panel(56, 150, 540, 250, "THIS PC");
+  if (ok) {
+    ui::TextSpaced(Font::Label, 12, 84, 176, c::kTextFaint, "ADDRESS FOR JOINING", 2.f);
+    ui::Text(Font::Heading, 52, 84, 196, c::kAccent, address);
+    float y = 268;
+    if (interfaces.size() > 1) {
+      std::string others;
+      for (size_t i = 1; i < interfaces.size(); ++i) others += (i > 1 ? "   " : "") + interfaces[i].address;
+      ui::Text(Font::Body, 15, 84, y, c::kTextDim, ui::Fit(Font::Body, 15, "Also: " + others, 480));
+      y += 26;
+    }
+    ui::TextWrapped(Font::Body, 15, 84, y + 4, 484, c::kTextDim,
+                    "PCs on this network find you in JOIN A LAN GAME. Over a VPN, they type this PC's VPN address.");
+  } else {
+    ui::TextSpaced(Font::Label, 12, 84, 176, c::kBad, "THE SERVER COULD NOT START", 2.f);
+    ui::TextWrapped(Font::Body, 17, 84, 202, 484, c::kText, lan_server_error_.empty() ? "Unknown error." : lan_server_error_);
+  }
+
+  // Server status.
+  const float px = 648, py = 150, pw = 568, ph = 396;
+  ui::Panel(px, py, pw, ph, "MATCH SERVER");
+  ui::Chip(px + pw - 24, py + 30, ok ? "RUNNING" : "STOPPED", ok ? c::kGood : c::kBad);
+  ui::TextSpaced(Font::Label, 12, px + 28, py + 24, c::kTextFaint, "PORT", 2.f);
+  ui::Text(Font::Body, 18, px + 28, py + 42, c::kText, std::to_string(lobby::kDefaultPort) + " (TCP), LAN search 36001 (UDP)");
+  ui::TextSpaced(Font::Label, 12, px + 28, py + 84, c::kTextFaint, "PLAYERS CONNECTED", 2.f);
+  if (st.players.empty()) {
+    ui::Text(Font::Body, 18, px + 28, py + 104, c::kTextDim, ok ? "Nobody yet. Players appear when their game starts." : "-");
+  } else {
+    for (size_t i = 0; i < st.players.size() && i < 8; ++i)
+      ui::Text(Font::Body, 18, px + 28 + float(i % 2) * 260, py + 104 + float(i / 2) * 28, c::kText,
+               ui::Fit(Font::Body, 18, st.players[i], 240));
+  }
+  ui::TextSpaced(Font::Label, 12, px + 28, py + 230, c::kTextFaint, "MATCHES", 2.f);
+  ui::Text(Font::Body, 18, px + 28, py + 250, c::kText,
+           st.matches == 0 ? "None hosted yet" : std::to_string(st.matches) + (st.matches == 1 ? " match" : " matches"));
+  ui::TextWrapped(Font::Body, 14, px + 28, py + 300, pw - 56, c::kTextFaint,
+                  "Keep this screen open while you play: the server stops when you leave it or close the launcher.");
+  ui::Footer("", {{Button::Move, "SELECT"}, {Button::Accept, "OK"}, {Button::Back, "STOP HOSTING"}});
+}
+
+std::vector<std::string> App::RecentHosts() const {
+  std::vector<std::string> out;
+  const std::string all = settings_.Get("recent_hosts");
+  size_t pos = 0;
+  while (pos < all.size()) {
+    size_t end = all.find(';', pos);
+    if (end == std::string::npos) end = all.size();
+    if (end > pos) out.push_back(all.substr(pos, end - pos));
+    pos = end + 1;
+  }
+  return out;
+}
+
+void App::AddRecentHost(const std::string& name, const std::string& address_port) {
+  std::string clean_name;
+  for (char ch : name)
+    if (ch != ';' && ch != '|') clean_name += ch;
+  std::vector<std::string> list = {clean_name + "|" + address_port};
+  for (const auto& e : RecentHosts()) {
+    if (e.substr(e.find('|') + 1) != address_port && list.size() < 5) list.push_back(e);
+  }
+  std::string all;
+  for (const auto& e : list) all += (all.empty() ? "" : ";") + e;
+  settings_.Set("recent_hosts", all);
+  settings_.Save();
+}
+
+void App::JoinLan(const std::string& address, uint16_t port, const std::string& name) {
+  const std::string server = address + ":" + std::to_string(port);
+  AddRecentHost(name.empty() ? address : name, server);
+  StartPlay(PlayMode::LanJoin, server);
+}
+
+void App::DrawJoin(float dt) {
+  ui::Header("JOIN A LAN GAME", HeaderStatus(), true);
+  const auto hosts = demo_ ? demo_hosts_ : lan_scanner_.hosts();
+  const auto recent = RecentHosts();
+
+  struct Entry {
+    std::string label, detail;
+    std::function<void()> action;
+    bool header = false;
+  };
+  std::vector<Entry> entries;
+  for (const auto& h : hosts) {
+    std::string detail = h.address + "   " + std::to_string(h.players) + (h.players == 1 ? " player" : " players");
+    if (h.matches) detail += ", " + std::to_string(h.matches) + (h.matches == 1 ? " match" : " matches");
+    entries.push_back({h.name.empty() ? h.address : h.name, detail,
+                       [this, h] { JoinLan(h.address, h.port, h.name); }});
+  }
+  for (const auto& r : recent) {
+    const size_t bar = r.find('|');
+    const std::string name = r.substr(0, bar);
+    const std::string server = bar == std::string::npos ? r : r.substr(bar + 1);
+    bool listed = false;
+    for (const auto& h : hosts)
+      if (h.address + ":" + std::to_string(h.port) == server) listed = true;
+    if (listed) continue;
+    const size_t colon = server.rfind(':');
+    const std::string addr = server.substr(0, colon);
+    const uint16_t port = colon == std::string::npos ? lobby::kDefaultPort
+                                                     : static_cast<uint16_t>(std::atoi(server.c_str() + colon + 1));
+    entries.push_back({name, "Recent   " + server, [this, addr, port, name] { JoinLan(addr, port, name); }});
+  }
+  entries.push_back({"ENTER AN ADDRESS", "Type the host's address (for a VPN, or when it isn't found).",
+                     [this] { OpenAddressEntry(); }});
+
+  const int n = int(entries.size());
+  join_sel_ = std::clamp(join_sel_, 0, n - 1);
+  if (Pressed(Action::Up)) join_sel_ = Wrap(join_sel_ - 1, n);
+  if (Pressed(Action::Down)) join_sel_ = Wrap(join_sel_ + 1, n);
+  if (Pressed(Action::Back)) {
+    Go(Screen::Online);
+    return;
+  }
+  if (Pressed(Action::Alt)) {
+    OpenAddressEntry();
+    return;
+  }
+
+  const float x = 64, y0 = 186, row_h = 62, w = 720;
+  ui::Panel(48, 150, 752, 470, hosts.empty() ? "SEARCHING THIS NETWORK" : "HOSTS FOUND");
+  if (hosts.empty()) {
+    ui::Spinner(770, 168, 7, c::kAccent);
+  }
+  bool activate = Pressed(Action::Accept);
+  const int visible = std::min(n, 7);
+  const int first = std::clamp(join_sel_ - visible + 1, 0, std::max(0, n - visible));
+  for (int i = first; i < first + visible; ++i) {
+    const float ry = y0 + float(i - first) * row_h;
+    if (MouseIn(x, ry, w, row_h - 6)) {
+      if (MouseMoved()) join_sel_ = i;
+      if (Clicked()) {
+        join_sel_ = i;
+        activate = true;
+      }
+    }
+  }
+  anim_join_ = demo_ ? float(join_sel_ - first) : Approach(anim_join_, float(join_sel_ - first), dt);
+  ui::MenuHighlight(x - 8, y0 + anim_join_ * row_h - 2, w, row_h - 8, 1.f);
+  for (int i = first; i < first + visible; ++i) {
+    const Entry& e = entries[size_t(i)];
+    const float ry = y0 + float(i - first) * row_h;
+    const bool sel = i == join_sel_;
+    ui::Text(Font::Heading, 24, x + 14, ry + 4, sel ? c::kText : c::kTextDim, ui::Fit(Font::Heading, 24, e.label, 330));
+    ui::Text(Font::Body, 15, x + 360, ry + 12, sel ? c::kAccent : c::kTextFaint, ui::Fit(Font::Body, 15, e.detail, w - 400));
+    if (sel) ui::Triangle(x + w - 18, ry + 20, 12, 0, c::kAccent);
+  }
+  if (activate && entries[size_t(join_sel_)].action) entries[size_t(join_sel_)].action();
+
+  const float px = 832, py = 150, pw = 384, ph = 470;
+  ui::Panel(px, py, pw, ph, "JOINING");
+  ui::TextWrapped(Font::Body, 16, px + 28, py + 28, pw - 56, c::kText,
+                  "Pick the host. The game starts and connects to that PC's match server. Then open the game's "
+                  "online menu and join the host's match.\n\nNot listed? The host may be on another network "
+                  "or a VPN: choose ENTER AN ADDRESS and type the address shown on the host's screen.");
+  ui::Footer("", {{Button::Move, "SELECT"}, {Button::Accept, "JOIN"}, {Button::Alt, "ENTER ADDRESS"}, {Button::Back, "BACK"}});
+}
+
+void App::OpenAddressEntry() {
+  // Start from the last address used, else this PC's own network (192.168.1.___).
+  std::string start;
+  const auto recent = RecentHosts();
+  if (!recent.empty()) {
+    const std::string server = recent.front().substr(recent.front().find('|') + 1);
+    start = server.substr(0, server.rfind(':'));
+  } else if (!demo_) {
+    start = netu::PrimaryLocalAddress();
+    if (!start.empty()) start = start.substr(0, start.rfind('.') + 1) + "0";
+  }
+  if (netu::ParseIp(start)) {
+    std::string digits;
+    size_t pos = 0;
+    for (int part = 0; part < 4; ++part) {
+      size_t end = start.find('.', pos);
+      if (end == std::string::npos) end = start.size();
+      std::string octet = start.substr(pos, end - pos);
+      while (octet.size() < 3) octet = "0" + octet;
+      digits += octet;
+      pos = end + 1;
+    }
+    addr_digits_ = digits;
+  }
+  addr_cursor_ = recent.empty() ? 9 : 0;
+  Go(Screen::Address);
+}
+
+bool App::AddressValid(std::string* text) const {
+  std::string out;
+  for (int part = 0; part < 4; ++part) {
+    const int v = std::atoi(addr_digits_.substr(size_t(part) * 3, 3).c_str());
+    if (v > 255) return false;
+    out += (part ? "." : "") + std::to_string(v);
+  }
+  if (out == "0.0.0.0" || out == "255.255.255.255") return false;
+  if (text) *text = out;
+  return true;
+}
+
+void App::AddressType(char ch) {
+  if (ch >= '0' && ch <= '9') {
+    addr_digits_[size_t(addr_cursor_)] = ch;
+    addr_cursor_ = std::min(addr_cursor_ + 1, 11);
+  } else if (ch == '.' || ch == ',' || ch == ' ') {
+    // Finish this part: "1" typed then "." becomes 001.
+    const int part = addr_cursor_ / 3;
+    const int in_part = addr_cursor_ % 3;
+    if (in_part > 0) {
+      std::string typed = addr_digits_.substr(size_t(part) * 3, size_t(in_part));
+      while (typed.size() < 3) typed = "0" + typed;
+      addr_digits_.replace(size_t(part) * 3, 3, typed);
+    }
+    addr_cursor_ = std::min((part + 1) * 3, 11);
+  }
+}
+
+void App::DrawAddress(float /*dt*/) {
+  ui::Header("ENTER AN ADDRESS", HeaderStatus(), true);
+  for (char ch : name_typed_) AddressType(ch);
+  name_typed_.clear();
+  if (Pressed(Action::Left)) addr_cursor_ = std::max(0, addr_cursor_ - 1);
+  if (Pressed(Action::Right)) addr_cursor_ = std::min(11, addr_cursor_ + 1);
+  auto change = [&](int delta) {
+    char& d = addr_digits_[size_t(addr_cursor_)];
+    d = char('0' + (d - '0' + delta + 10) % 10);
+  };
+  if (Pressed(Action::Up)) change(+1);
+  if (Pressed(Action::Down)) change(-1);
+  if (Pressed(Action::Extra)) {  // keyboard Backspace / controller X: back one digit
+    addr_cursor_ = std::max(0, addr_cursor_ - 1);
+  }
+  if (Pressed(Action::Back)) {
+    Go(Screen::Join);
+    return;
+  }
+  if (Pressed(Action::Accept) || Pressed(Action::Start)) {
+    std::string text;
+    if (AddressValid(&text)) {
+      JoinLan(text, lobby::kDefaultPort, "");
+      return;
+    }
+    addr_bad_flash_ = now_ + 1.2;
+  }
+
+  const float pw = 760, px = (ui::kCanvasW - pw) * 0.5f, py = 170, ph = 300;
+  ui::Panel(px, py, pw, ph, "HOST'S ADDRESS");
+  const float dw = 46, gap = 30, size = 56;
+  const float total = 12 * dw + 3 * gap;
+  float x = px + (pw - total) * 0.5f;
+  const float y = py + 90;
+  const bool bad = now_ < addr_bad_flash_;
+  for (int i = 0; i < 12; ++i) {
+    const bool sel = i == addr_cursor_;
+    if (MouseIn(x, y - 20, dw, 110) && Clicked()) addr_cursor_ = i;
+    if (sel) {
+      ui::Chamfer(x - 2, y - 6, dw + 4, 84, 6, ui::WithAlpha(c::kAccent, 0.18f), c::kAccent, 1.5f);
+      ui::Triangle(x + dw * 0.5f, y - 22, 10, 3, c::kAccent);
+      ui::Triangle(x + dw * 0.5f, y + 96, 10, 1, c::kAccent);
+    }
+    const char digit[2] = {addr_digits_[size_t(i)], 0};
+    const int part = i / 3;
+    const int v = std::atoi(addr_digits_.substr(size_t(part) * 3, 3).c_str());
+    ui::Text(Font::Mono, size, x + dw * 0.5f, y, v > 255 || bad ? c::kBad : sel ? c::kText : c::kTextDim, digit, 0.5f);
+    x += dw;
+    if (i % 3 == 2 && i < 11) {
+      ui::Text(Font::Mono, size, x + gap * 0.5f, y, c::kTextFaint, ".", 0.5f);
+      x += gap;
+    }
+  }
+  std::string text;
+  const bool valid = AddressValid(&text);
+  ui::Text(Font::Body, 18, px + pw * 0.5f, py + 214, valid ? c::kAccent : c::kBad,
+           valid ? "Join " + text + "  (port " + std::to_string(lobby::kDefaultPort) + ")"
+                 : "Each part must be 0 to 255",
+           0.5f);
+  ui::TextWrapped(Font::Body, 15, px + 28, py + ph + 20, pw - 56, c::kTextFaint,
+                  using_gamepad_ ? "Up / down changes a digit, left / right moves. The address is shown on the host's "
+                                   "LAN HOST screen."
+                                 : "Type the digits (a dot jumps to the next part), or use the arrow keys. The address "
+                                   "is shown on the host's LAN HOST screen.");
+  ui::Footer("", {{Button::Move, "CHANGE"}, {Button::Accept, "JOIN", "ENTER"}, {Button::Extra, "BACK ONE", "BKSP"},
+                  {Button::Back, "CANCEL", "ESC"}});
+}
+
 // --- Dialog and toast --------------------------------------------------------------
 
 void App::DrawDialog(float /*dt*/) {
@@ -1020,14 +1438,15 @@ void App::DrawToast() {
 
 // --- Screenshot scenes -------------------------------------------------------------
 
-int App::DemoCount() { return 13; }
+int App::DemoCount() { return 17; }
 
 const char* App::DemoName(int index) {
   static const char* kNames[] = {"01_main_menu",       "02_setup_first_run", "03_setup_building",
                                  "04_settings_game",   "05_settings_launcher", "06_main_first_time",
                                  "07_build_log",       "08_install_tools",   "09_setup_error",
                                  "10_player_name",     "11_player_name_keyboard", "12_settings_player",
-                                 "13_ask_name_first_play"};
+                                 "13_ask_name_first_play", "14_online_menu", "15_lan_host",
+                                 "16_lan_join",        "17_lan_address"};
   return kNames[std::clamp(index, 0, DemoCount() - 1)];
 }
 
@@ -1195,10 +1614,48 @@ void App::LoadDemo(int index) {
       player_name_set_ = false;
       ShowNameQuestion();
       break;
+    case 13:
+      screen_ = Screen::Online;
+      online_sel_ = 1;
+      break;
+    case 14:
+      screen_ = Screen::Host;
+      host_sel_ = 0;
+      demo_host_status_ = {};
+      demo_host_status_.running = true;
+      demo_host_status_.port = lobby::kDefaultPort;
+      demo_host_status_.players = {"Hatdagger", "Char", "Ramba Ral"};
+      demo_host_status_.matches = 1;
+      break;
+    case 15: {
+      screen_ = Screen::Join;
+      join_sel_ = 0;
+      lan::HostInfo h;
+      h.name = "Hatdagger";
+      h.address = "192.168.1.20";
+      h.port = lobby::kDefaultPort;
+      h.players = 3;
+      h.matches = 1;
+      demo_hosts_ = {h};
+      h.name = "Garage PC";
+      h.address = "192.168.1.34";
+      h.players = 0;
+      h.matches = 0;
+      demo_hosts_.push_back(h);
+      settings_.Set("recent_hosts", "Tailscale friend|100.71.12.5:36000");
+      break;
+    }
+    case 16:
+      screen_ = Screen::Address;
+      addr_digits_ = "100071012005";
+      addr_cursor_ = 8;
+      break;
     default:
       break;
   }
   anim_main_ = float(main_sel_);
+  anim_online_ = float(online_sel_);
+  anim_host_ = float(host_sel_);
   anim_setup_ = float(setup_sel_);
   anim_settings_ = float(settings_sel_[settings_tab_]);
   screen_fade_ = 1.f;

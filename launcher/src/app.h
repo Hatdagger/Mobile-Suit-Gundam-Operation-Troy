@@ -14,6 +14,8 @@
 
 #include "game_config.h"
 #include "game_finder.h"
+#include "lan_discovery.h"
+#include "lobby_server.h"
 #include "player_name.h"
 #include "subprocess.h"
 #include "setup_steps.h"
@@ -56,7 +58,8 @@ class App {
   void LoadDemo(int index);
 
  private:
-  enum class Screen { Main, Setup, Settings, Log, Running, Name };
+  enum class Screen { Main, Setup, Settings, Log, Running, Name, Online, Host, Join, Address };
+  enum class PlayMode { Offline, Online, LanHost, LanJoin };
   enum class Row { Game, Tools, Source, Files, Build, Count };
 
   struct Job {
@@ -127,7 +130,8 @@ class App {
   void RunExtract(bool confirm);
   void RunUpdate();
   void ConfirmInstallTools(std::function<void()> then);
-  void Play();
+  void Play();  // starts the game in play_mode_ (set by StartPlay)
+  void StartPlay(PlayMode mode, std::string lan_server = {});
   bool AskForNameBeforePlay();
   void ApplyGameDefaults();
   void PollGame();
@@ -150,15 +154,33 @@ class App {
   void DrawLog(float dt);
   void DrawRunning(float dt);
   void DrawName(float dt);
+  void DrawOnline(float dt);
+  void DrawHost(float dt);
+  void DrawJoin(float dt);
+  void DrawAddress(float dt);
   void DrawDialog(float dt);
   void DrawToast();
   void DrawJobPanel(float x, float y, float w, float h);
   std::vector<MenuItem> MainItems();
+  std::vector<MenuItem> OnlineItems();
+  // A vertical menu like the main menu's; runs the chosen item's action.
+  void DrawMenu(const std::vector<MenuItem>& items, int& sel, float& anim, float x, float y0, float w, float row_h,
+                float dt);
   std::string RowStatus(Row r, ImU32& color) const;
   std::string RowDetail(Row r) const;
   void ActivateRow(Row r);
   void StartSourceJob();
   std::string HeaderStatus() const;
+
+  // LAN play (app_screens.cpp)
+  void StartHosting();
+  void StopHosting();
+  void OpenAddressEntry();
+  void AddressType(char c);
+  bool AddressValid(std::string* text) const;
+  void JoinLan(const std::string& address, uint16_t port, const std::string& name);
+  std::vector<std::string> RecentHosts() const;  // "name|address:port"
+  void AddRecentHost(const std::string& name, const std::string& address_port);
 
   // Player name (app_screens.cpp)
   void LoadPlayerName();
@@ -220,6 +242,22 @@ class App {
   double log_scroll_ = 0;
   bool log_follow_ = true;
   std::optional<Dialog> dialog_;
+
+  // Online and LAN play
+  PlayMode play_mode_ = PlayMode::Offline;
+  std::string play_lan_server_;  // "address:port" for LAN play
+  Screen play_return_ = Screen::Main;  // where to go when the game closes
+  int online_sel_ = 0, host_sel_ = 0, join_sel_ = 0;
+  float anim_online_ = 0, anim_host_ = 0, anim_join_ = 0;
+  lobby::Server lan_server_;
+  std::string lan_server_error_;
+  lan::Scanner lan_scanner_;
+  std::string addr_digits_ = "192168001000";  // 12 digits, shown as 192.168.001.000
+  int addr_cursor_ = 0;
+  double addr_bad_flash_ = 0;
+  // Example data for screenshots
+  lobby::Status demo_host_status_;
+  std::vector<lan::HostInfo> demo_hosts_;
 
   // Player name screen
   std::string name_text_;
