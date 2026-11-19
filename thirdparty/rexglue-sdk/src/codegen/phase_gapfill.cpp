@@ -11,6 +11,7 @@
 
 #include "ppc/instruction.h"
 
+#include <unordered_map>
 #include <unordered_set>
 
 #include <rex/codegen/phases.h>
@@ -35,12 +36,68 @@ namespace {
 // GapFill to register uncovered code regions
 //=============================================================================
 
+// Lowest source address of a direct (non-call) branch to each target in .text.
+const std::unordered_map<uint32_t, uint32_t>& branchSources(const BinaryView& binary) {
+  static const BinaryView* cachedFor = nullptr;
+  static std::unordered_map<uint32_t, uint32_t> sources;
+  if (cachedFor == &binary)
+    return sources;
+  cachedFor = &binary;
+  sources.clear();
+  const auto* text = binary.findSectionByName(".text");
+  if (!text)
+    return sources;
+  for (uint32_t addr = text->baseAddress; addr + 4 <= text->end(); addr += 4) {
+    const uint8_t* data = binary.translate(addr);
+    if (!data)
+      continue;
+    auto decoded = decode_instruction(addr, load_and_swap<uint32_t>(data));
+    if (decoded.is_call() || !decoded.branch_target.has_value())
+      continue;
+    uint32_t target = decoded.branch_target.value();
+    auto [it, inserted] = sources.try_emplace(target, addr);
+    if (!inserted && addr < it->second)
+      it->second = addr;
+  }
+  return sources;
+}
+
+// True when the code after the bctr at `addr` (up to its next blr/bctr) is not jumped
+// into from code before it, i.e. it is not a switch case of the function above.
+bool codeAfterBctrIsSeparate(const BinaryView& binary, uint32_t addr) {
+  const auto& sources = branchSources(binary);
+  uint32_t start = addr + 4;
+  // An inline jump table (case addresses right after the dispatching bctr) is data.
+  if (const auto* text = binary.findSectionByName(".text")) {
+    if (const uint8_t* next = binary.translate(start)) {
+      uint32_t word = load_and_swap<uint32_t>(next);
+      if (text->contains(word))
+        return false;
+    }
+  }
+  for (uint32_t a = start; a < start + 0x4000; a += 4) {
+    const uint8_t* data = binary.translate(a);
+    if (!data)
+      break;
+    auto it = sources.find(a);
+    if (it != sources.end() && it->second < start && it->second + 0x10000 > start)
+      return false;
+    uint32_t raw = load_and_swap<uint32_t>(data);
+    if (raw == 0x4E800420 || decode_instruction(a, raw).is_return())
+      break;
+  }
+  return true;
+}
+
 // Split a code region into function segments based on terminators (blr, tail calls).
 std::vector<CodeRegion> splitRegionOnTerminators(
     const CodeRegion& region, const BinaryView& binary,
     const std::unordered_set<uint32_t>& knownCallables) {
   std::vector<CodeRegion> segments;
   uint32_t segmentStart = region.start;
+  // Furthest forward branch target seen in the current segment (0 = none). A bctr
+  // only ends the segment when nothing before it jumps past it.
+  uint32_t furthestTarget = 0;
 
   for (uint32_t addr = region.start; addr < region.end; addr += 4) {
     const uint8_t* data = binary.translate(addr);
@@ -56,6 +113,14 @@ std::vector<CodeRegion> splitRegionOnTerminators(
     if (decoded.is_return()) {
       shouldSplit = true;
       reason = "blr";
+    } else if (raw == 0x4E800420 && furthestTarget <= addr &&
+               codeAfterBctrIsSeparate(binary, addr)) {
+      // Unconditional bctr: an indirect tail call. Nothing falls through, so the next
+      // instruction starts new code (left orphaned otherwise, e.g. 0x823C95E0 in
+      // Operation Troy). Skipped when an earlier branch in this segment jumps past
+      // it (a switch dispatch in the middle of a function).
+      shouldSplit = true;
+      reason = "bctr";
     } else if (decoded.opcode == Opcode::b && decoded.branch_target.has_value()) {
       uint32_t target = decoded.branch_target.value();
       // Don't split on tail recursion (branch to own segment start)
@@ -65,7 +130,14 @@ std::vector<CodeRegion> splitRegionOnTerminators(
       }
     }
 
+    if (!decoded.is_call() && decoded.branch_target.has_value()) {
+      uint32_t target = decoded.branch_target.value();
+      if (target > addr && target < region.end && target > furthestTarget)
+        furthestTarget = target;
+    }
+
     if (shouldSplit) {
+      furthestTarget = 0;
       uint32_t segmentEnd = addr + 4;
       if (segmentEnd > segmentStart) {
         segments.push_back({segmentStart, segmentEnd});

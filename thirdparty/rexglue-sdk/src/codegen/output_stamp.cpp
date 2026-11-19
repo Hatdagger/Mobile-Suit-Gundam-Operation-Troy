@@ -30,7 +30,8 @@ constexpr int kStampVersion = 1;
 /// existing projects regenerate after an SDK update (the SDK version string alone may
 /// not change, e.g. in a vendored copy).
 ///   2: GapFill extra passes (stubs left unclaimed by the first pass)
-constexpr int kCodegenRevision = 2;
+///   3: GapFill splits segments at an unconditional bctr
+constexpr int kCodegenRevision = 3;
 
 std::optional<OutputStamp> OutputStamp::Load(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
