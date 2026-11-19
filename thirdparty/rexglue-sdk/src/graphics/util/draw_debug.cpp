@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -233,6 +234,70 @@ std::string DrawDebug::CheckVertices(const RegisterFile& regs, const Shader& ver
       half_exp31, half_total, float_bad, float_total, sample_raw, sample_value);
 }
 
+void DrawDebug::DumpVertices(const RegisterFile& regs, const Shader& vertex_shader,
+                             const TranslatePhysicalFn& translate) {
+  for (const Shader::VertexBinding& binding : vertex_shader.vertex_bindings()) {
+    xenos::xe_gpu_vertex_fetch_t fetch = regs.GetVertexFetch(binding.fetch_constant);
+    if (fetch.type != xenos::FetchConstantType::kVertex || !binding.stride_words) {
+      continue;
+    }
+    const uint8_t* base = translate(fetch.address << 2);
+    if (!base) {
+      continue;
+    }
+    uint32_t size_words = fetch.size;
+    uint32_t vertex_count = size_words / binding.stride_words;
+    REXGPU_INFO("DrawDebug: DUMP {} fetch {} stride {} words, {} vertices, endian {}", dump_count_,
+                binding.fetch_constant, binding.stride_words, vertex_count,
+                uint32_t(fetch.endian));
+    auto load = [&](uint32_t word_index) -> uint32_t {
+      uint32_t raw;
+      std::memcpy(&raw, base + size_t(word_index) * 4, 4);
+      return xenos::GpuSwap(raw, fetch.endian);
+    };
+    for (const Shader::VertexBinding::Attribute& attribute : binding.attributes) {
+      const auto& a = attribute.fetch_instr.attributes;
+      uint32_t stride = a.stride ? a.stride : binding.stride_words;
+      if (a.offset < 0) {
+        continue;
+      }
+      uint32_t words = std::max(1u, uint32_t(32 - std::countl_zero(xenos::GetVertexFormatNeededWords(a.data_format, 0b1111))));
+      std::string first;
+      uint32_t max_byte[4] = {};
+      float max_abs[4] = {};
+      for (uint32_t v = 0; v < vertex_count; ++v) {
+        uint32_t w0 = v * stride + uint32_t(a.offset);
+        if (w0 + words > size_words) {
+          break;
+        }
+        uint32_t raw[4] = {};
+        for (uint32_t w = 0; w < words && w < 4; ++w) {
+          raw[w] = load(w0 + w);
+        }
+        if (v < 4) {
+          first += fmt::format(" [{:08X} {:08X} {:08X} {:08X}]", raw[0], raw[1], raw[2], raw[3]);
+        }
+        if (a.data_format == xenos::VertexFormat::k_8_8_8_8) {
+          for (uint32_t b = 0; b < 4; ++b) {
+            max_byte[b] = std::max(max_byte[b], (raw[0] >> (8 * b)) & 0xFF);
+          }
+        } else if (a.data_format == xenos::VertexFormat::k_16_16_16_16_FLOAT) {
+          for (uint32_t h = 0; h < 4; ++h) {
+            float f = XenosHalfToFloat(uint16_t(raw[h >> 1] >> (16 * (h & 1))));
+            max_abs[h] = std::max(max_abs[h], std::fabs(f));
+          }
+        }
+      }
+      REXGPU_INFO(
+          "DrawDebug: DUMP {} attr {} offset {} signed {} integer {} exp {} | max bytes(x,y,z,w) "
+          "{} {} {} {} | max |half| {:g} {:g} {:g} {:g} | first{}",
+          dump_count_, VertexFormatName(a.data_format), a.offset, a.is_signed, a.is_integer,
+          a.exp_adjust, max_byte[0], max_byte[1], max_byte[2], max_byte[3], max_abs[0], max_abs[1],
+          max_abs[2], max_abs[3], first);
+    }
+  }
+}
+
 bool DrawDebug::OnDraw(const RegisterFile& regs, const Shader& vertex_shader,
                        const Shader* pixel_shader, xenos::PrimitiveType primitive_type,
                        uint32_t index_count, const TranslatePhysicalFn& translate) {
@@ -308,6 +373,7 @@ bool DrawDebug::OnDraw(const RegisterFile& regs, const Shader& vertex_shader,
                       v[2], v[3], bad ? " <-- SUSPICIOUS" : "");
         }
       }
+      DumpVertices(regs, vertex_shader, translate);
     }
   }
 

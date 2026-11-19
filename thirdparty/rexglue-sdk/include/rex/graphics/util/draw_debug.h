@@ -70,6 +70,8 @@ class DrawDebug {
   std::string CheckVertices(const RegisterFile& regs, const Shader& vertex_shader,
                             const TranslatePhysicalFn& translate);
   bool HuntStartRequested();
+  void DumpVertices(const RegisterFile& regs, const Shader& vertex_shader,
+                    const TranslatePhysicalFn& translate);
   uint32_t dump_count_ = 0;
   void SaveImage(const ui::RawImage& image, const std::string& name);
 
