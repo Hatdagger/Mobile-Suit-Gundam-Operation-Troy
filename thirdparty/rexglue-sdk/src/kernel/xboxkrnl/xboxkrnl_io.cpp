@@ -12,6 +12,11 @@
 // Disable warnings about unused parameters for kernel functions
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+#include <algorithm>
+#include <cctype>
+#include <string>
+#include <vector>
+
 #include <rex/filesystem/device.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/logging.h>
@@ -31,6 +36,10 @@
 #include <rex/cvar.h>
 
 REXCVAR_DECLARE(bool, log_file_access);
+
+REXCVAR_DEFINE_STRING(debug_map_swap, "", "Debug",
+                      "Operation Troy testing: load another map wherever the game opens Mp01_SEA "
+                      "files. Give the map number 1-9 or a name such as Mp04_GCY. Empty = off");
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
@@ -103,6 +112,70 @@ static bool IsValidPath(const std::string_view s, bool is_pattern) {
   return true;
 }
 
+
+// Operation Troy testing aid (debug_map_swap): rewrites any path that names Mp01_SEA (the map of
+// the first mission) to another multiplayer map, so the other maps can be checked without
+// multiplayer. Each map has its own set of _E / _Z / plain variants, so when the exact variant
+// does not exist the closest one that does is used.
+static std::string DebugMapSwapTarget() {
+  static const char* const kMaps[] = {"Mp01_SEA", "Mp02_JOG", "Mp03_SAT", "Mp04_GCY", "Mp05_TMD",
+                                      "Mp06_OMB", "Mp07_CFB", "Mp08_HKC", "Mp09_JUG"};
+  std::string value = REXCVAR_GET(debug_map_swap);
+  while (!value.empty() && value.back() == ' ') value.pop_back();
+  while (!value.empty() && value.front() == ' ') value.erase(0, 1);
+  if (value.empty()) return {};
+  if (value.size() == 1 && value[0] >= '1' && value[0] <= '9') return kMaps[value[0] - '1'];
+  for (const char* name : kMaps) {
+    std::string_view n(name);
+    if (value.size() == n.size() &&
+        std::equal(n.begin(), n.end(), value.begin(),
+                   [](char a, char b) { return std::tolower(a) == std::tolower(b); })) {
+      return std::string(n);
+    }
+    // Also accept just the three letters, e.g. "GCY".
+    if (value.size() == 3 &&
+        std::equal(n.begin() + 5, n.end(), value.begin(),
+                   [](char a, char b) { return std::tolower(a) == std::tolower(b); })) {
+      return std::string(n);
+    }
+  }
+  return {};
+}
+
+static std::string ApplyDebugMapSwap(const std::string& path) {
+  static const std::string target = DebugMapSwapTarget();
+  if (target.empty() || target == "Mp01_SEA") return path;
+  std::string lower(path);
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return char(std::tolower(c)); });
+  size_t pos = lower.find("mp01_sea");
+  if (pos == std::string::npos) return path;
+  const size_t name_end = pos + 8;
+  // Variant suffix right after the name (_E or _Z), if any.
+  std::string suffix;
+  if (name_end + 2 <= path.size() && path[name_end] == '_' &&
+      (lower[name_end + 1] == 'e' || lower[name_end + 1] == 'z') &&
+      (name_end + 2 == path.size() || !std::isalnum((unsigned char)path[name_end + 2]))) {
+    suffix = path.substr(name_end, 2);
+  }
+  const std::string head = path.substr(0, pos);
+  const std::string tail = path.substr(name_end + suffix.size());
+  std::vector<std::string> variants;
+  variants.push_back(suffix);
+  for (const char* v : {"_E", "_Z", ""}) {
+    if (std::find(variants.begin(), variants.end(), v) == variants.end()) variants.push_back(v);
+  }
+  for (const auto& v : variants) {
+    std::string candidate = head + target + v + tail;
+    if (REX_KERNEL_FS()->ResolvePath(candidate)) {
+      REXFS_INFO("debug_map_swap: {} -> {}", path, candidate);
+      return candidate;
+    }
+  }
+  REXFS_WARN("debug_map_swap: no {} file for {}, keeping it", target, path);
+  return path;
+}
+
 u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
                        ppc_ptr_t<X_OBJECT_ATTRIBUTES> object_attrs,
                        ppc_ptr_t<X_IO_STATUS_BLOCK> io_status_block, mapped_u64 allocation_size_ptr,
@@ -134,6 +207,10 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
     return X_STATUS_OBJECT_NAME_INVALID;
+  }
+
+  if (object_attrs->root_directory == 0xFFFFFFFD || object_attrs->root_directory == 0) {
+    target_path = ApplyDebugMapSwap(target_path);
   }
 
   if (object_attrs->root_directory != 0xFFFFFFFD &&  // ObDosDevices
@@ -540,6 +617,10 @@ u32 NtQueryFullAttributesFile_entry(ppc_ptr_t<X_OBJECT_ATTRIBUTES> obj_attribs,
   // Enforce that the path is ASCII.
   if (!IsValidPath(target_path, false)) {
     return X_STATUS_OBJECT_NAME_INVALID;
+  }
+
+  if (!root_file) {
+    target_path = ApplyDebugMapSwap(target_path);
   }
 
   // Resolve the file using the virtual file system.
