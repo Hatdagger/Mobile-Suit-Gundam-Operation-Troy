@@ -8,6 +8,8 @@
 
 #include <rex/kernel/xam/live/live_settings.h>
 
+#include <cstring>
+
 #include <rex/logging.h>
 
 REXCVAR_DEFINE_STRING(network_mode, "offline", "Live",
@@ -32,11 +34,29 @@ REXCVAR_DEFINE_STRING(upnp_root, "", "Live",
 REXCVAR_DEFINE_BOOL(log_mask_ips, true, "Live",
                     "Hide the last part of IP addresses in the log");
 
+REXCVAR_DEFINE_INT32(net_test_instance, 0, "Live",
+                     "Testing two copies of the game on one PC: 1 or 2 gives this copy its own "
+                     "private address (127.0.0.11 / 127.0.0.12). 0 = off (normal play)")
+    .range(0, 9)
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_STRING(gamertag, "Player", "Live",
                       "Your player name, shown to other players (at most 15 characters)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 namespace rex::kernel::xam::live {
+
+uint32_t TestInstanceIp() {
+  const int32_t n = REXCVAR_GET(net_test_instance);
+  if (n <= 0 || n > 9) {
+    return 0;
+  }
+  // 127.0.0.(10+n), network byte order like the other Live addresses.
+  const uint8_t bytes[4] = {127, 0, 0, static_cast<uint8_t>(10 + n)};
+  uint32_t ip;
+  std::memcpy(&ip, bytes, 4);
+  return ip;
+}
 
 NetworkMode CurrentNetworkMode() {
   return ParseNetworkMode(REXCVAR_GET(network_mode)).value_or(NetworkMode::kOffline);

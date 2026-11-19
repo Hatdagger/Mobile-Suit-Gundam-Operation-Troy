@@ -28,12 +28,17 @@ REXCVAR_DECLARE(std::string, api_address);
 REXCVAR_DECLARE(bool, upnp);
 REXCVAR_DECLARE(std::string, upnp_root);
 REXCVAR_DECLARE(bool, log_mask_ips);
+REXCVAR_DECLARE(int32_t, net_test_instance);
 REXCVAR_DECLARE(std::string, gamertag);
 
 namespace rex::kernel::xam::live {
 
 // The network_mode setting (offline if it holds something unknown).
 NetworkMode CurrentNetworkMode();
+
+// The private address of this copy when net_test_instance is set (two copies on one PC),
+// in network byte order; 0 when off.
+uint32_t TestInstanceIp();
 
 // A LiveApi configuration from the settings above.
 LiveApiConfig ConfigFromSettings(uint32_t title_id);

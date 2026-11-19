@@ -106,6 +106,14 @@ void LiveService::Start(uint32_t title_id, const std::filesystem::path& user_dat
   REXKRNL_INFO("Live: {} mode, server {}, gamertag \"{}\"", NetworkModeName(mode_),
                api_->api_address(), gamertag());
 
+  if (const uint32_t test_ip = TestInstanceIp()) {
+    local_ip_ = test_ip;
+    // XSocket wants host byte order.
+    rex::system::XSocket::SetDefaultBindIp(rex::byte_swap(test_ip));
+    REXKRNL_INFO("Live: test copy {} of 2 on this PC, private address {}",
+                 REXCVAR_GET(net_test_instance), Ipv4ToString(test_ip));
+  }
+
   thread_ = std::thread([this] { Run(); });
 
   if (mode_ == NetworkMode::kOnline) {
@@ -228,6 +236,11 @@ bool LiveService::ConnectOnce() {
       REXKRNL_INFO("Live: server is on this PC; using local address {}", ShowIp(local_ip_.load()));
       ip = local_ip_.load();
     }
+  }
+  if (const uint32_t test_ip = TestInstanceIp()) {
+    // Two copies on one PC: each is known by its own private address (see Start).
+    local_ip_ = test_ip;
+    ip = test_ip;
   }
   online_ip_ = ip;
 

@@ -131,7 +131,7 @@ class App {
   void RunUpdate();
   void ConfirmInstallTools(std::function<void()> then);
   void Play();  // starts the game in play_mode_ (set by StartPlay)
-  void StartPlay(PlayMode mode, std::string lan_server = {});
+  void StartPlay(PlayMode mode, std::string lan_server = {}, bool solo_test = false);
   bool AskForNameBeforePlay();
   void ApplyGameDefaults();
   void PollGame();
@@ -226,6 +226,8 @@ class App {
   std::string last_error_, last_error_title_;
   std::vector<std::string> last_error_lines_;
   proc::Child game_process_;
+  proc::Child game_process2_;  // second copy in a solo test
+  bool solo_test_ = false;     // two copies on this PC as two players (LAN host screen)
 
   PickerSlot picker_;
   bool picker_open_ = false;

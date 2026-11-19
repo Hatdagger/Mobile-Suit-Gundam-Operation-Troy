@@ -29,6 +29,7 @@
 #endif
 
 #include <rex/chrono/clock.h>
+#include <rex/kernel/xam/live/live_settings.h>
 #include <rex/kernel/xam/live/live_service.h>
 #include <rex/kernel/xam/live/xnet.h>
 #include <rex/kernel/xam/module.h>
@@ -573,7 +574,9 @@ u32 NetDll_XNetXnAddrToInAddr_entry(u32 caller, ppc_ptr_t<XNADDR> xn_addr, mappe
 
   // Our own address: talk to ourselves (494707E4, 4E4D07D1).
   if (LoadMac(xn_addr->abEnet) == Live().identity().mac_address) {
-    in_addr->addr = htonl(INADDR_LOOPBACK);
+    // A test copy (net_test_instance) only listens on its own private address.
+    const uint32_t test_ip = live::TestInstanceIp();
+    in_addr->addr = test_ip ? test_ip : htonl(INADDR_LOOPBACK);
     return X_ERROR_SUCCESS;
   }
   if (Live().mode() == live::NetworkMode::kLan) {

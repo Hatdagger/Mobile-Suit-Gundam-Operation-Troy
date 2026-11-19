@@ -777,8 +777,9 @@ void App::RunUpdate() {
 
 // --- Playing -----------------------------------------------------------------------
 
-void App::StartPlay(PlayMode mode, std::string lan_server) {
+void App::StartPlay(PlayMode mode, std::string lan_server, bool solo_test) {
   play_mode_ = mode;
+  solo_test_ = solo_test && mode == PlayMode::LanHost;
   play_lan_server_ = std::move(lan_server);
   play_return_ = mode == PlayMode::Offline ? Screen::Main
                  : mode == PlayMode::Online ? Screen::Online
@@ -825,11 +826,31 @@ void App::Play() {
                                                : play_mode_ == PlayMode::Online ? "online"
                                                : play_mode_ == PlayMode::LanHost ? "LAN host, server " + play_lan_server_
                                                                                  : "LAN, server " + play_lan_server_));
+  // Solo test: two copies as two players. Each gets its own private address on this PC
+  // (net_test_instance), and they run in windows so both can be seen.
+  proc::Command c2;
+  if (solo_test_) {
+    c.args.push_back("--fullscreen=false");
+    c2 = c;
+    c.args.push_back("--net_test_instance=1");
+    const fs::path saves2 = layout_.saves_dir / "test_player2";
+    fs::create_directories(saves2, ec);
+    c2.args[2] = "--user_data_root=" + util::PathStr(saves2);
+    c2.args.push_back("--net_test_instance=2");
+    c2.args.push_back("--log_name_suffix=_p2");
+    std::string name2 = player_name_set_ ? player_name_ : std::string(player_name::kDefault);
+    if (name2.size() > player_name::kMaxLength - 2) name2.resize(player_name::kMaxLength - 2);
+    c2.args.push_back("--gamertag=" + name2 + " 2");
+    log_.Add("Solo test: starting two copies of the game");
+  }
   c.cwd = util::PathStr(layout_.build_dir);
   std::string err;
   if (!game_process_.Start(c, &err)) {
     ShowMessage("COULD NOT START THE GAME", err, ui::col::kBad);
     return;
+  }
+  if (solo_test_ && !game_process2_.Start(c2, &err)) {
+    ShowMessage("COULD NOT START THE SECOND COPY", err, ui::col::kBad);
   }
   // Stay open behind the game (not minimized): when the game closes, Windows activates the
   // launcher again. A minimized launcher could not reliably bring itself back to the front,
@@ -881,7 +902,11 @@ void App::ShowNameQuestion() {
 }
 
 void App::PollGame() {
-  if (screen_ != Screen::Running || game_process_.Running()) return;
+  if (screen_ != Screen::Running) return;
+  // Poll both so each exit is noticed; stay here until every copy has closed.
+  const bool first = game_process_.Running();
+  const bool second = solo_test_ && game_process2_.Running();
+  if (first || second) return;
   SDL_RestoreWindow(window_);
   SDL_RaiseWindow(window_);
   BringToFront(window_);

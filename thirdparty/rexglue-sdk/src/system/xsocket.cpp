@@ -24,6 +24,7 @@ namespace {
 
 std::atomic<XSocket::PortHook> g_on_bind{nullptr};
 std::atomic<XSocket::PortHook> g_on_close{nullptr};
+std::atomic<uint32_t> g_default_bind_ip{0};
 
 sock::Endpoint FromGuest(const XSOCKADDR_IN* a) {
   return sock::Endpoint{static_cast<uint32_t>(a->sin_addr), static_cast<uint16_t>(a->sin_port)};
@@ -41,6 +42,10 @@ void ToGuest(const sock::Endpoint& e, XSOCKADDR_IN* a) {
 void XSocket::SetPortHooks(PortHook on_bind, PortHook on_close) {
   g_on_bind.store(on_bind);
   g_on_close.store(on_close);
+}
+
+void XSocket::SetDefaultBindIp(uint32_t ip) {
+  g_default_bind_ip.store(ip);
 }
 
 XSocket::XSocket(KernelState* kernel_state) : XObject(kernel_state, kObjectType) {}
@@ -116,6 +121,7 @@ int XSocket::IOControl(uint32_t cmd, uint8_t* arg_ptr) {
 }
 
 int XSocket::Connect(const XSOCKADDR_IN* name) {
+  BindDefaultIfNeeded();
   int ret = sock::Connect(native_handle_, FromGuest(name));
   // connect() binds a random local port; remember it, but don't open it on the
   // router (see NoteBound).
@@ -131,8 +137,21 @@ int XSocket::Connect(const XSOCKADDR_IN* name) {
   return ret;
 }
 
+void XSocket::BindDefaultIfNeeded() {
+  const uint32_t ip = g_default_bind_ip.load();
+  if (!ip || bound_) {
+    return;
+  }
+  if (sock::Bind(native_handle_, sock::Endpoint{ip, 0}) == 0) {
+    bound_ = true;  // random port, like an implicit bind: not reported (see NoteBound)
+  }
+}
+
 int XSocket::Bind(const XSOCKADDR_IN* name) {
   sock::Endpoint local = FromGuest(name);
+  if (!local.ip) {
+    local.ip = g_default_bind_ip.load();
+  }
   int ret = sock::Bind(native_handle_, local);
   if (ret < 0) {
     return ret;
@@ -237,6 +256,7 @@ int XSocket::SendTo(const uint8_t* buf, uint32_t buf_len, uint32_t flags,
   if (!to) {
     return sock::Send(native_handle_, buf, buf_len, flags);
   }
+  BindDefaultIfNeeded();
   sock::Endpoint target = FromGuest(to);
   int ret = sock::SendTo(native_handle_, buf, buf_len, flags, &target);
   if (!bound_port_) {

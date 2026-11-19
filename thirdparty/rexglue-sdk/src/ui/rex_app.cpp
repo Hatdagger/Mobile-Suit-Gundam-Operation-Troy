@@ -46,6 +46,9 @@
 #include <filesystem>
 #include <string_view>
 
+REXCVAR_DEFINE_STRING(log_name_suffix, "", "Log",
+                      "Added to the log file name, e.g. _p2 for a second copy of the game");
+
 REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
                       "GPU emulation plugin to load at startup (e.g. 'xenos'); empty disables "
                       "GPU emulation")
@@ -167,7 +170,7 @@ bool ReXApp::SetupEnvironment() {
   auto log_config = rex::BuildLogConfig(log_file_cvar.empty() ? nullptr : log_file_cvar.c_str(),
                                         log_level_str, category_levels);
   if (log_file_cvar.empty()) {
-    log_config.app_name = std::string(GetName());
+    log_config.app_name = std::string(GetName()) + REXCVAR_GET(log_name_suffix);
     log_config.log_dir = (exe_dir / "logs").string();
   }
 

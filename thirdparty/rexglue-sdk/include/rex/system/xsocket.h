@@ -96,6 +96,10 @@ class XSocket : public XObject {
   // online layer can open the port on the router (UPnP). protocol: "UDP" / "TCP".
   using PortHook = void (*)(uint16_t port, const char* protocol);
   static void SetPortHooks(PortHook on_bind, PortHook on_close);
+  // Two copies of a game on one PC (net_test_instance): sockets bound to "any address", and
+  // sockets that send or connect before binding, use this address instead (host byte order,
+  // 0 = off). Each copy then has its own address and can use the same game ports.
+  static void SetDefaultBindIp(uint32_t ip);
 
   XSocket(KernelState* kernel_state);
   ~XSocket();
@@ -145,6 +149,7 @@ class XSocket : public XObject {
  private:
   XSocket(KernelState* kernel_state, uint64_t native_handle);
   void NoteBound();
+  void BindDefaultIfNeeded();
 
   uint64_t native_handle_ = ~uint64_t(0);
 

@@ -953,7 +953,8 @@ void App::DrawRunning(float /*dt*/) {
   ui::Spinner(x + 50, y + 64, 16, c::kAccent);
   ui::TextSpaced(Font::Heading, 26, x + 84, y + 46, c::kText, "GAME RUNNING", 2.f);
   ui::TextWrapped(Font::Body, 17, x + 84, y + 92, w - 120, c::kTextDim,
-                  "Gundam Operation Troy is running in its own window. Close the game to come back here.");
+                  solo_test_ ? "Two copies are running in their own windows. Close both to come back here."
+                             : "Gundam Operation Troy is running in its own window. Close the game to come back here.");
   ui::Footer("", {});
 }
 
@@ -1082,6 +1083,12 @@ void App::DrawHost(float dt) {
   if (ok)
     items.push_back({"START GAME", "Start the game. In its online menu, host a match: the others will see it.", true,
                      [this, address] { StartPlay(PlayMode::LanHost, address + ":" + std::to_string(lobby::kDefaultPort)); }});
+  if (ok)
+    items.push_back({"SOLO TEST: 2 COPIES",
+                     "Test alone: two copies of the game in windows, as two players. Host in one, join in the other.",
+                     true, [this] {
+                       StartPlay(PlayMode::LanHost, "127.0.0.1:" + std::to_string(lobby::kDefaultPort), true);
+                     }});
   items.push_back({"STOP HOSTING", "Stop the match server and go back.", true, [this] { StopHosting(); }});
   if (Pressed(Action::Back)) {
     StopHosting();
