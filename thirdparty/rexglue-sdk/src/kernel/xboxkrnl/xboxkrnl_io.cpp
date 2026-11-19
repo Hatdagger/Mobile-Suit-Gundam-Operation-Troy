@@ -28,6 +28,9 @@
 #include <rex/system/xthread.h>
 #include <rex/system/xtypes.h>
 #include <rex/thread/mutex.h>
+#include <rex/cvar.h>
+
+REXCVAR_DECLARE(bool, log_file_access);
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
@@ -168,6 +171,10 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
   }
 
   *handle_out = handle;
+  if (REXCVAR_GET(log_file_access)) {
+    REXFS_INFO("FileAccess: open {} -> {:#x} size={:#x}", target_path, result,
+               file ? file->entry()->size() : 0);
+  }
   if (XFAILED(result)) {
     REXKRNL_IMPORT_FAIL("NtCreateFile", "path='{}' -> {:#x}", target_path, result);
   } else {

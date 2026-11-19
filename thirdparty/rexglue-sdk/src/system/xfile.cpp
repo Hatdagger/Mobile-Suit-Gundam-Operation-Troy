@@ -21,6 +21,11 @@
 
 #include <span>
 
+#include <rex/cvar.h>
+
+REXCVAR_DEFINE_BOOL(log_file_access, false, "Log",
+                    "Log every guest file open and read (path, offset, length) at info level");
+
 namespace rex::system {
 
 XFile::XFile(KernelState* kernel_state, rex::filesystem::File* file, bool synchronous)
@@ -170,6 +175,10 @@ X_STATUS XFile::ReadInternal(uint32_t buffer_guest_address, uint32_t buffer_leng
                   buffer_length, true, true);
             }
 
+            if (REXCVAR_GET(log_file_access)) {
+              REXFS_INFO("FileAccess: read {} offset={:#x} length={:#x} read={:#x}", path(),
+                         byte_offset, buffer_length, bytes_read);
+            }
             if (byte_offset) {
               position_ = byte_offset;
             }
