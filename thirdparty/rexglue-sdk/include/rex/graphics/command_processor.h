@@ -248,6 +248,9 @@ class CommandProcessor {
 
   uint32_t primary_buffer_ptr_ = 0;
   uint32_t primary_buffer_size_ = 0;
+  // Bumped by InitializeRingBuffer (game thread) so the GPU worker does not overwrite the reset
+  // read pointer with the end of a batch it was executing from the old ring.
+  std::atomic<uint32_t> ring_generation_{0};
 
   // The last packets read (diagnostics for a bad packet; written by the GPU worker thread only).
   struct PacketTraceEntry {

@@ -239,7 +239,17 @@ void CommandProcessor::WorkerThreadMain() {
     assert_true(read_ptr_index_ != write_ptr_index);
 
     // Execute. Note that we handle wraparound transparently.
-    read_ptr_index_ = ExecutePrimaryBuffer(read_ptr_index_, write_ptr_index);
+    // A game can set up a new ring (VdInitializeRingBuffer, read pointer back to 0) while a batch
+    // from the old one runs here. Keep that reset: storing the old batch's end over it made the
+    // next batch run from the wrong place, across the whole empty ring, and the game deadlocked.
+    const uint32_t generation = ring_generation_.load();
+    const uint32_t batch_end = ExecutePrimaryBuffer(read_ptr_index_, write_ptr_index);
+    if (ring_generation_.load() == generation) {
+      read_ptr_index_ = batch_end;
+    } else {
+      REXGPU_DEBUG("Ring buffer re-initialized during a batch; reading the new ring from the start");
+      read_ptr_index_ = 0;
+    }
 
     // TODO(benvanik): use reader->Read_update_freq_ and only issue after moving
     //     that many indices.
@@ -315,6 +325,7 @@ void CommandProcessor::InitializeRingBuffer(uint32_t ptr, uint32_t size_log2) {
   read_ptr_index_ = 0;
   primary_buffer_ptr_ = ptr;
   primary_buffer_size_ = uint32_t(1) << (size_log2 + 3);
+  ring_generation_.fetch_add(1);
 }
 
 void CommandProcessor::EnableReadPointerWriteBack(uint32_t ptr, uint32_t block_size_log2) {
