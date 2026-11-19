@@ -15,6 +15,7 @@
 #include <cstring>
 
 #include <rex/cvar.h>
+#include <rex/kernel/xam/live/live_session.h>
 #include <rex/kernel/xam/private.h>
 #include <rex/logging.h>
 #include <rex/math.h>
@@ -746,12 +747,30 @@ u32 XamWriteGamerTile_entry(u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 arg5, u3
 }
 
 u32 XamSessionCreateHandle_entry(mapped_u32 handle_ptr) {
+  if (live::SessionsEnabled()) {
+    // Online / LAN: a real session object (live_session.cpp).
+    auto session = object_ref<live::XSession>(new live::XSession(REX_KERNEL_STATE()));
+    const uint32_t result = session->Initialize();
+    if (result) {
+      return result;
+    }
+    *handle_ptr = session->handle();
+    return X_ERROR_SUCCESS;
+  }
   *handle_ptr = 0xCAFEDEAD;
   return X_ERROR_SUCCESS;
 }
 
 u32 XamSessionRefObjByHandle_entry(u32 handle, mapped_u32 obj_ptr) {
-  assert_true(handle == 0xCAFEDEAD);
+  if (handle != 0xCAFEDEAD) {
+    auto session = REX_KERNEL_OBJECTS()->LookupObject<live::XSession>(handle);
+    if (!session) {
+      return X_ERROR_INVALID_HANDLE;
+    }
+    session->RetainHandle();
+    *obj_ptr = session->guest_object();
+    return X_ERROR_SUCCESS;
+  }
   // TODO(PermaNull): Implement this properly,
   // For the time being returning 0xDEADF00D will prevent crashing.
   *obj_ptr = 0xDEADF00D;

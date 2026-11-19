@@ -214,6 +214,12 @@ class LiveApi {
   std::optional<ArbitrationInfo> GetArbitration(uint64_t session_id);
   // The server only deletes sessions created from the caller's own IP.
   bool DeleteSession(uint64_t session_id);
+  // Session properties and contexts (each a Xenia base64 Property). The server
+  // only lists sessions in searches once these are set (contexts included).
+  bool SetSessionProperties(uint64_t session_id, const std::vector<std::string>& properties);
+  // Properties of a session as a search result for matchmaking query query_id.
+  std::optional<std::vector<std::string>> GetSessionProperties(uint64_t session_id,
+                                                               uint32_t query_id);
   // Deletes all sessions this machine created: those with its host address and MAC
   // (any MAC when mac_address = 0). host_address: the address the sessions were
   // created with, if it differs from the one the server sees; empty = the server's view.

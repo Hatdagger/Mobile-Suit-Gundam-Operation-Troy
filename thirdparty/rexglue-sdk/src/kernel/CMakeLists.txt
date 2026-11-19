@@ -32,6 +32,8 @@ set(REXKERNEL_SOURCES
     xam/live/live_api.cpp
     xam/live/live_identity.cpp
     xam/live/live_service.cpp
+    xam/live/live_properties.cpp
+    xam/live/live_session.cpp
     xam/live/live_settings.cpp
 
     # XBDM subsystem - provides __imp__Xbdm* symbols

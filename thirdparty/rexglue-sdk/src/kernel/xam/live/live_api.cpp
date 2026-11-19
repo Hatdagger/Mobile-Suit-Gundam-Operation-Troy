@@ -704,6 +704,39 @@ bool LiveApi::DeleteMySessions(uint64_t mac_address, std::string_view host_addre
 
 // --- QoS ------------------------------------------------------------------------------
 
+bool LiveApi::SetSessionProperties(uint64_t session_id,
+                                   const std::vector<std::string>& properties) {
+  Document doc(rapidjson::kObjectType);
+  auto& alloc = doc.GetAllocator();
+  Value list(rapidjson::kArrayType);
+  for (const auto& property : properties) {
+    list.PushBack(Str(property, alloc), alloc);
+  }
+  doc.AddMember("properties", list, alloc);
+  return Call("POST", SessionPath(session_id, "properties"), ToString(doc)).result.success();
+}
+
+std::optional<std::vector<std::string>> LiveApi::GetSessionProperties(uint64_t session_id,
+                                                                      uint32_t query_id) {
+  const Reply reply =
+      Call("GET", SessionPath(session_id, "properties/" + std::to_string(query_id)));
+  if (!reply.result.success()) {
+    return std::nullopt;
+  }
+  Document doc;
+  if (!ParseJson(reply.body, doc) || !doc.IsObject() || !doc.HasMember("properties") ||
+      !doc["properties"].IsArray()) {
+    return std::nullopt;
+  }
+  std::vector<std::string> properties;
+  for (const auto& item : doc["properties"].GetArray()) {
+    if (item.IsString()) {
+      properties.emplace_back(item.GetString(), item.GetStringLength());
+    }
+  }
+  return properties;
+}
+
 bool LiveApi::PostQos(uint64_t session_id, std::span<const uint8_t> data) {
   // Xenia posts the raw bytes with libcurl's default form content type; the
   // server keeps the raw body only for content types it parses, so match it.

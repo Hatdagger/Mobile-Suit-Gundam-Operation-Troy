@@ -8,16 +8,18 @@ same paths, same status codes (POST answers 201, errors are
 {"message", "error", "statusCode"}), same checks on XUIDs, MAC addresses
 and session IDs. Data is kept in memory only.
 
-Simplified compared with the real server: session search does not apply the
-game's matchmaking filters (the real server needs session properties and
-contexts that the game sets later; see NETPLAY.md phase 3).
+Session search follows the real server for games without XLast data: only
+sessions with properties and contexts are listed, and when filters are sent
+the session's GAME_MODE and GAME_TYPE contexts must match the filters'.
 
 Usage:  python3 mock_server.py [--port 36000] [--host 127.0.0.1]
 Used by: optroy_netcheck selftest http://127.0.0.1:36000
 """
 
 import argparse
+import base64
 import json
+import struct
 import re
 import secrets
 import threading
@@ -32,6 +34,29 @@ PRESENCE = 1 << 1
 STATS = 1 << 2
 MATCHMAKING = 1 << 3
 SINGLEPLAYER_WITH_STATS = PRESENCE | STATS | (1 << 8) | (1 << 9) | (1 << 10)
+
+
+GAME_TYPE = 0x0000800A
+GAME_MODE = 0x0000800B
+
+
+def parse_property(text):
+    """Xenia Property: id (LE u32), type byte at 4, value (BE) at 12, extra at 20."""
+    raw = base64.b64decode(text, validate=True)
+    if base64.b64encode(raw).decode() != text or len(raw) < 12:
+        raise HttpError(500, "Invalid base64")
+    pid = struct.unpack_from("<i", raw, 0)[0] & 0xFFFFFFFF
+    ptype = raw[4]
+    data = raw[20:] if ptype in (4, 6) else raw[12:]
+    return pid, ptype, data
+
+
+def context_value(prop_list, cid):
+    for text in prop_list:
+        pid, ptype, data = parse_property(text)
+        if pid == cid and len(data) >= 4:
+            return struct.unpack_from(">I", data, 0)[0]
+    return None
 
 
 def is_host(flags):
@@ -264,6 +289,18 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if num_users and open_public < num_users and open_private < num_users:
                         continue
+                    props = s.get("properties", [])
+                    if not props or not any(parse_property(p)[1] == 0 for p in props):
+                        continue  # no properties / contexts yet: not advertised
+                    filters = req.get("filters")
+                    if filters is not None:
+                        want_mode = context_value(filters, GAME_MODE)
+                        want_type = context_value(filters, GAME_TYPE)
+                        if want_mode is None or want_type is None:
+                            continue
+                        if (context_value(props, GAME_MODE) != want_mode or
+                                context_value(props, GAME_TYPE) != want_type):
+                            continue
                     results.append(session_dto(s))
                 count = int(req.get("resultsCount") or 0)
                 return ok_post, results[:count] if count else results, None, None
@@ -297,6 +334,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if not session:
             raise HttpError(404, f"Session {sid} was not found.")
+
+        if action == "properties":
+            if method == "POST" and len(rest) == 2:
+                req = self.json_body()
+                props = req.get("properties") or []
+                for text in props:
+                    parse_property(text)  # 500 on bad base64, like the server
+                session["properties"] = list(props)
+                return ok_post, None, None, None
+            if method == "GET":
+                # No XLast: everything except contexts, in stored order.
+                return 200, {"properties": [p for p in session.get("properties", [])
+                                            if parse_property(p)[1] != 0]}, None, None
 
         if method == "GET" and not action:
             return 200, session_dto(session), None, None

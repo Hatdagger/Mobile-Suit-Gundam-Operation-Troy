@@ -37,6 +37,7 @@ add_executable(optroy_netcheck
     ${HTTP_SOURCE}
     "${SDK}/src/kernel/xam/live/live_api.cpp"
     "${SDK}/src/kernel/xam/live/live_identity.cpp"
+    "${SDK}/src/kernel/xam/live/live_properties.cpp"
 )
 target_include_directories(optroy_netcheck PRIVATE "${SDK}/include")
 target_include_directories(optroy_netcheck SYSTEM PRIVATE "${SDK}/thirdparty/rapidjson/include")

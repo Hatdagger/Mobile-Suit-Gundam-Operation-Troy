@@ -446,24 +446,6 @@ uint64_t LoadMac(const uint8_t* in) {
   return mac;
 }
 
-// XLiveAPI::IpGetConsoleXnAddr: this console's XNADDR.
-void FillOwnXnAddr(XNADDR* addr) {
-  std::memset(addr, 0, sizeof(XNADDR));
-  auto& live = Live();
-  if (live.SignedInToLive()) {
-    addr->ina.addr = live.online_ip();
-    addr->inaOnline.addr = live.online_ip();
-    addr->wPortOnline = live.player_port();
-  } else if (live.mode() != live::NetworkMode::kOffline) {
-    addr->ina.addr = live.local_ip();
-  } else {
-    addr->ina.addr = htonl(INADDR_LOOPBACK);  // offline: as the SDK did before
-  }
-  addr->abOnline[kXnAddrPlatformTypeOffset] = kPlatformXbox360;
-  // A real, per-PC MAC. RakNet-based games need it non-zero (see 58411436).
-  StoreMac(addr->abEnet, live.identity().mac_address);
-}
-
 // Background lookups (DNS, QoS) the game can cancel by releasing the result.
 std::mutex lookup_mutex;
 std::map<uint32_t, std::shared_ptr<std::atomic<bool>>> lookups;  // guest address -> cancelled
@@ -490,6 +472,24 @@ bool ReleaseLookup(uint32_t guest_address) {
 std::atomic<bool> explicit_live_key{false};
 
 }  // namespace
+
+// XLiveAPI::IpGetConsoleXnAddr: this console's XNADDR.
+void FillOwnXnAddr(XNADDR* addr) {
+  std::memset(addr, 0, sizeof(XNADDR));
+  auto& live = Live();
+  if (live.SignedInToLive()) {
+    addr->ina.addr = live.online_ip();
+    addr->inaOnline.addr = live.online_ip();
+    addr->wPortOnline = live.player_port();
+  } else if (live.mode() != live::NetworkMode::kOffline) {
+    addr->ina.addr = live.local_ip();
+  } else {
+    addr->ina.addr = htonl(INADDR_LOOPBACK);  // offline: as the SDK did before
+  }
+  addr->abOnline[kXnAddrPlatformTypeOffset] = kPlatformXbox360;
+  // A real, per-PC MAC. RakNet-based games need it non-zero (see 58411436).
+  StoreMac(addr->abEnet, live.identity().mac_address);
+}
 
 u32 NetDll_XNetGetTitleXnAddr_entry(u32 caller, ppc_ptr_t<XNADDR> addr_ptr) {
   if (!addr_ptr) {

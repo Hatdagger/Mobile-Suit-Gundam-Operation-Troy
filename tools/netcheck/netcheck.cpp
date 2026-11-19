@@ -13,6 +13,7 @@
 
 #include <rex/kernel/xam/live/live_api.h>
 #include <rex/kernel/xam/live/live_identity.h>
+#include <rex/kernel/xam/live/live_properties.h>
 #include <rex/net/http.h>
 
 #include <cstdio>
@@ -229,7 +230,43 @@ int RunSelftest(const std::string& server) {
 
   SessionSearchQuery query{.search_index = 0, .results_count = 10, .num_users = 1,
                            .searcher_xuid = guest_xuid};
-  Expect(HasSession(api.SearchSessions(query), session_id), "guest finds the session by search");
+  Expect(!HasSession(api.SearchSessions(query), session_id),
+         "session without properties is not listed yet");
+
+  std::printf("Session properties\n");
+  {
+    const Property mode = Property::Context(kContextGameMode, 1);
+    const auto round = Property::FromBase64(mode.ToBase64());
+    Expect(round && *round == mode && round->u32() == 1, "context property survives base64");
+    const Property name = Property::WString(kPropertyGamerHostname, "TestHost");
+    const auto name_round = Property::FromBase64(name.ToBase64());
+    Expect(name_round && *name_round == name && name_round->extra.size() == 18,
+           "string property survives base64 (UTF-16 with terminator)");
+  }
+  Expect(api.SetSessionProperties(
+             session_id, {Property::Context(kContextGameMode, 1).ToBase64(),
+                          Property::Context(kContextGameType, 0).ToBase64(),
+                          Property::Int64(kPropertyGamerPuid, int64_t(host_xuid)).ToBase64(),
+                          Property::WString(kPropertyGamerHostname, "TestHost").ToBase64()}),
+         "host uploads session properties and contexts");
+  query.filters = {Property::Context(kContextGameMode, 1).ToBase64(),
+                   Property::Context(kContextGameType, 0).ToBase64()};
+  Expect(HasSession(api.SearchSessions(query), session_id),
+         "guest finds the session by search (matching game mode)");
+  query.filters[0] = Property::Context(kContextGameMode, 2).ToBase64();
+  Expect(!HasSession(api.SearchSessions(query), session_id),
+         "search for another game mode does not find it");
+  query.filters[0] = Property::Context(kContextGameMode, 1).ToBase64();
+  {
+    const auto props = api.GetSessionProperties(session_id, 0);
+    bool has_name = false;
+    for (const auto& text : props.value_or(std::vector<std::string>{})) {
+      const auto p = Property::FromBase64(text);
+      has_name |= p && p->id == kPropertyGamerHostname;
+    }
+    Expect(props && props->size() == 2 && has_name,
+           "search result properties come back (no contexts, host name included)");
+  }
   query.searcher_xuid = host_xuid;
   const auto own = api.SearchSessions(query);
   Expect(own.has_value() && !HasSession(own, session_id), "host's own session is not in its search");

@@ -76,6 +76,9 @@ struct XNDNS {
   XIN_ADDR aina[8];
 };
 
+// This console's XNADDR (xam_net.cpp; XLiveAPI::IpGetConsoleXnAddr in Xenia).
+void FillOwnXnAddr(XNADDR* addr);
+
 struct XNQOSINFO {
   uint8_t flags;
   uint8_t reserved;
