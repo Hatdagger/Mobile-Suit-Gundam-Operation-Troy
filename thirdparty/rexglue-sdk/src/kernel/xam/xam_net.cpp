@@ -200,6 +200,28 @@ u32 NetDll_XNetCleanup_entry(u32 caller, mapped_void params) {
   return 0;
 }
 
+// Traffic counters for XNetGetOpt (XNET_OPTID_NIC_* 2-5, XNET_OPTID_CALLER_* 6-9).
+// Only the game's own traffic exists here, so the NIC and caller counters are
+// the same (payload bytes, without packet headers).
+namespace {
+std::atomic<uint64_t> net_xmit_bytes{0};
+std::atomic<uint64_t> net_xmit_frames{0};
+std::atomic<uint64_t> net_recv_bytes{0};
+std::atomic<uint64_t> net_recv_frames{0};
+void CountSent(int ret) {
+  if (ret > 0) {
+    net_xmit_bytes += uint64_t(ret);
+    ++net_xmit_frames;
+  }
+}
+void CountReceived(int ret) {
+  if (ret > 0) {
+    net_recv_bytes += uint64_t(ret);
+    ++net_recv_frames;
+  }
+}
+}  // namespace
+
 u32 NetDll_XNetGetOpt_entry(u32 one, u32 option_id, mapped_void buffer_ptr,
                             mapped_u32 buffer_size) {
   assert_true(one == 1);
@@ -211,6 +233,37 @@ u32 NetDll_XNetGetOpt_entry(u32 one, u32 option_id, mapped_void buffer_ptr,
       }
       std::memcpy(buffer_ptr, &xnet_startup_params, sizeof(XNetStartupParams));
       return 0;
+    case 2:  // XNET_OPTID_NIC_XMIT_BYTES
+    case 3:  // XNET_OPTID_NIC_XMIT_FRAMES
+    case 4:  // XNET_OPTID_NIC_RECV_BYTES
+    case 5:  // XNET_OPTID_NIC_RECV_FRAMES
+    case 6:  // XNET_OPTID_CALLER_XMIT_BYTES
+    case 7:  // XNET_OPTID_CALLER_XMIT_FRAMES
+    case 8:  // XNET_OPTID_CALLER_RECV_BYTES
+    case 9: {  // XNET_OPTID_CALLER_RECV_FRAMES
+      if (*buffer_size < sizeof(uint64_t)) {
+        *buffer_size = sizeof(uint64_t);
+        return 0x2738;  // WSAEMSGSIZE
+      }
+      uint64_t value;
+      switch ((option_id - 2) % 4) {
+        case 0:
+          value = net_xmit_bytes;
+          break;
+        case 1:
+          value = net_xmit_frames;
+          break;
+        case 2:
+          value = net_recv_bytes;
+          break;
+        default:
+          value = net_recv_frames;
+          break;
+      }
+      memory::store_and_swap<uint64_t>(static_cast<uint8_t*>(buffer_ptr.host_address()), value);
+      *buffer_size = sizeof(uint64_t);
+      return 0;
+    }
     default:
       REXKRNL_ERROR("NetDll_XNetGetOpt: option {} unimplemented", option_id);
       return 0x2726;  // WSAEINVAL
@@ -349,6 +402,7 @@ u32 NetDll_WSASendTo_entry(u32 caller, u32 socket_handle, ppc_ptr_t<XWSABUF> buf
     XThread::SetLastError(rex::system::sock::LastError());
     return -1;
   }
+  CountSent(ret);
   if (num_bytes_sent) {
     *num_bytes_sent = static_cast<uint32_t>(ret);
   }
@@ -1272,7 +1326,9 @@ u32 NetDll_recv_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 bu
   if (!socket) {
     return -1;
   }
-  return Result(socket->Recv(buf_ptr, buf_len, flags));
+  int ret = socket->Recv(buf_ptr, buf_len, flags);
+  CountReceived(ret);
+  return Result(ret);
 }
 
 u32 NetDll_recvfrom_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len,
@@ -1288,6 +1344,7 @@ u32 NetDll_recvfrom_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u3
 
   XSOCKADDR_IN from{};
   int ret = socket->RecvFrom(buf_ptr, buf_len, flags, from_ptr ? &from : nullptr);
+  CountReceived(ret);
   if (ret >= 0 && from_ptr) {
     *from_ptr = from;
     *fromlen_ptr = sizeof(XSOCKADDR_IN);
@@ -1300,7 +1357,9 @@ u32 NetDll_send_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 bu
   if (!socket) {
     return -1;
   }
-  return Result(socket->Send(buf_ptr, buf_len, flags));
+  int ret = socket->Send(buf_ptr, buf_len, flags);
+  CountSent(ret);
+  return Result(ret);
 }
 
 u32 NetDll_sendto_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len, u32 flags,
@@ -1313,7 +1372,9 @@ u32 NetDll_sendto_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 
     XThread::SetLastError(rex::system::sock::kWsaEFAULT);
     return -1;
   }
-  return Result(socket->SendTo(buf_ptr, buf_len, flags, to_ptr ? to_ptr.host_address() : nullptr));
+  int ret = socket->SendTo(buf_ptr, buf_len, flags, to_ptr ? to_ptr.host_address() : nullptr);
+  CountSent(ret);
+  return Result(ret);
 }
 
 u32 NetDll___WSAFDIsSet_entry(u32 socket_handle, ppc_ptr_t<x_fd_set> fd_set) {
