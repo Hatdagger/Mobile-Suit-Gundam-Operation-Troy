@@ -526,6 +526,19 @@ void App::DrawSettings(float dt) {
                     {"1280 x 720 (original)", "2560 x 1440", "3840 x 2160"},
                     std::clamp(g.GetInt("resolution_scale", 1), 1, 3) - 1,
                     [&g, save](int i) { g.SetInt("resolution_scale", i + 1); save(); }});
+    // ROV is exact but slower; host render targets (rtv) are faster but still being fixed
+    // for this game (parts of the 3D scene can go black).
+    rows.push_back({"Graphics mode",
+                    "ACCURATE draws everything correctly. FASTER runs better on weaker PCs but is still "
+                    "being fixed: parts of the 3D world can go black.",
+                    {"ACCURATE", "FASTER (TEST)"},
+                    g.GetString("render_target_path_d3d12", "rov") == "rtv" ? 1 : 0,
+                    [&g, save](int i) {
+                      g.SetString("render_target_path_d3d12", i == 1 ? "rtv" : "rov");
+                      // The faster mode draws the most with this off.
+                      if (i == 1) g.SetBool("direct_host_resolve", false);
+                      save();
+                    }});
     static const char* kEffects[] = {"bilinear", "cas", "fsr"};
     int effect = 0;
     for (int i = 0; i < 3; ++i)
@@ -539,6 +552,9 @@ void App::DrawSettings(float dt) {
       if (g.GetString("swap_post_effect", "none") == kAa[i]) aa = i;
     rows.push_back({"Anti-aliasing", "Smooths jagged edges.", {"OFF", "FXAA", "FXAA (strong)"}, aa,
                     [&g, save](int i) { g.SetString("swap_post_effect", kAa[i]); save(); }});
+    rows.push_back({"Show FPS", "Shows the frame rate in the top-right corner. Press F2 in the game to switch.",
+                    {"OFF", "ON"}, g.GetBool("show_fps", false) ? 1 : 0,
+                    [&g, save](int i) { g.SetBool("show_fps", i == 1); save(); }});
     rows.push_back({"V-Sync", "Matches the frame rate to your screen to stop tearing.", {"ON", "OFF"},
                     g.GetBool("vsync", true) ? 0 : 1, [&g, save](int i) { g.SetBool("vsync", i == 0); save(); }});
     rows.push_back({"Letterbox", "Keeps the game's 16:9 shape on screens of other shapes.", {"ON", "OFF"},
