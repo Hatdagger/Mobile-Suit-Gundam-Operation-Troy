@@ -54,7 +54,7 @@ bool RenderTargetLogFirstTime(const std::string& text) {
   static std::mutex mutex;
   static std::unordered_set<std::string> seen;
   std::lock_guard lock(mutex);
-  if (seen.size() >= 400) {
+  if (seen.size() >= 2000) {
     return false;
   }
   return seen.insert(text).second;
@@ -720,7 +720,24 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
       if (!interlock_barrier_only) {
         size_t transfers = last_update_transfers_[bit].size();
         if (transfers) {
-          text += fmt::format(" (transfers {})", transfers);
+          text += fmt::format(" (transfers {}:", transfers);
+          // Each transfer: tile range, and where it comes from (to see whether
+          // the copied range changes with the view, e.g. 4x clear -> 2x scene).
+          for (const Transfer& transfer : last_update_transfers_[bit]) {
+            RenderTargetKey source_key = transfer.source->key();
+            text += fmt::format(" [{}-{} from {} base {} fmt {} msaa {}x pitch {}", transfer.start_tiles,
+                                transfer.end_tiles, source_key.is_depth ? "depth" : "color",
+                                uint32_t(source_key.base_tiles), uint32_t(source_key.resource_format),
+                                1u << uint32_t(source_key.msaa_samples),
+                                uint32_t(source_key.pitch_tiles_at_32bpp));
+            if (transfer.host_depth_source) {
+              RenderTargetKey host_depth_key = transfer.host_depth_source->key();
+              text += fmt::format(" hostdepth base {} msaa {}x", uint32_t(host_depth_key.base_tiles),
+                                  1u << uint32_t(host_depth_key.msaa_samples));
+            }
+            text += "]";
+          }
+          text += ")";
         }
       }
     }
