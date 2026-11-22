@@ -11,6 +11,8 @@
  */
 #include <rex/ui/overlay/debug_overlay.h>
 #include <rex/version.h>
+#include <rex/frame_stats.h>
+#include <cstdio>
 #include <imgui.h>
 #ifdef REXGLUE_ENABLE_PERF_COUNTERS
 #include <rex/perf/counter.h>
@@ -37,6 +39,12 @@ void DebugOverlayDialog::OnDraw(ImGuiIO& io) {
       auto stats = stats_provider_();
       if (stats.frame_count > 0) {
         ImGui::Text("Guest: %.1f FPS (%.2f ms)", stats.fps, stats.frame_time_ms);
+      }
+    } else {
+      rex::frame_stats::Snapshot stats = rex::frame_stats::Get();
+      if (stats.fps > 0) {
+        ImGui::Text("Game: %.1f FPS (%.2f ms, worst %.1f ms)", stats.fps, stats.average_ms,
+                    stats.worst_ms);
       }
     }
 #ifdef REXGLUE_ENABLE_PERF_COUNTERS
@@ -103,6 +111,34 @@ void DebugOverlayDialog::OnDraw(ImGuiIO& io) {
   }
   ImGui::End();
   ImGui::PopStyleColor();
+}
+
+void FpsOverlayDialog::OnDraw(ImGuiIO& io) {
+  rex::frame_stats::Snapshot stats = rex::frame_stats::Get();
+  char text[96];
+  if (stats.fps > 0) {
+    snprintf(text, sizeof(text), "%.0f FPS  %.1f ms  (worst %.1f)", stats.fps, stats.average_ms,
+             stats.worst_ms);
+  } else {
+    snprintf(text, sizeof(text), "-- FPS");
+  }
+  ImVec2 text_size = ImGui::CalcTextSize(text);
+  ImVec2 padding = ImGui::GetStyle().WindowPadding;
+  ImGui::SetNextWindowPos(
+      ImVec2(io.DisplaySize.x - text_size.x - padding.x * 2.0f - 8.0f, 8.0f));
+  ImGui::SetNextWindowSize(ImVec2(0, 0));
+  ImGui::SetNextWindowBgAlpha(0.45f);
+  if (ImGui::Begin("##fps", nullptr,
+                   ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                       ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings |
+                       ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing)) {
+    // Green at 55+ FPS, yellow at 25+, red below.
+    ImVec4 color = stats.fps >= 55   ? ImVec4(0.55f, 1.0f, 0.55f, 1.0f)
+                   : stats.fps >= 25 ? ImVec4(1.0f, 0.9f, 0.4f, 1.0f)
+                                     : ImVec4(1.0f, 0.45f, 0.45f, 1.0f);
+    ImGui::TextColored(color, "%s", text);
+  }
+  ImGui::End();
 }
 
 }  // namespace rex::ui

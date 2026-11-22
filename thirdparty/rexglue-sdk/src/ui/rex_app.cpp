@@ -49,6 +49,9 @@
 REXCVAR_DEFINE_STRING(log_name_suffix, "", "Log",
                       "Added to the log file name, e.g. _p2 for a second copy of the game");
 
+REXCVAR_DEFINE_BOOL(show_fps, false, "UI",
+                    "Show a small frame rate readout in the top-right corner (F2 toggles it)");
+
 REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
                       "GPU emulation plugin to load at startup (e.g. 'xenos'); empty disables "
                       "GPU emulation")
@@ -405,6 +408,16 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
           std::make_unique<ui::DebugOverlayDialog>(imgui_drawer_.get(), frame_stats_provider_);
     }
   });
+  rex::ui::RegisterBind("bind_fps", "F2", "Toggle FPS readout", [this] {
+    if (fps_overlay_) {
+      fps_overlay_.reset();
+    } else {
+      fps_overlay_ = std::make_unique<ui::FpsOverlayDialog>(imgui_drawer_.get());
+    }
+  });
+  if (REXCVAR_GET(show_fps)) {
+    fps_overlay_ = std::make_unique<ui::FpsOverlayDialog>(imgui_drawer_.get());
+  }
   rex::ui::RegisterBind("bind_console", "Backtick", "Toggle console overlay", [this] {
     if (console_overlay_) {
       console_overlay_.reset();
@@ -562,6 +575,7 @@ void ReXApp::OnDestroy() {
 
   // Unregister overlay keybinds before destroying dialogs
   rex::ui::UnregisterBind("bind_debug_overlay");
+  rex::ui::UnregisterBind("bind_fps");
   rex::ui::UnregisterBind("bind_console");
   rex::ui::UnregisterBind("bind_settings");
   rex::ui::UnregisterBind("bind_achievements");
@@ -578,6 +592,7 @@ void ReXApp::OnDestroy() {
   settings_overlay_.reset();
   console_overlay_.reset();
   debug_overlay_.reset();
+  fps_overlay_.reset();
   if (imgui_drawer_) {
     imgui_drawer_->SetPresenterAndImmediateDrawer(nullptr, nullptr);
     imgui_drawer_.reset();

@@ -23,6 +23,16 @@ struct FrameStats {
   uint64_t frame_count = 0;
 };
 
+// Small always-on-top FPS readout (top-right corner, ignores input). Shown by
+// the show_fps setting or the F2 key.
+class FpsOverlayDialog : public ImGuiDialog {
+ public:
+  explicit FpsOverlayDialog(ImGuiDrawer* imgui_drawer) : ImGuiDialog(imgui_drawer) {}
+
+ protected:
+  void OnDraw(ImGuiIO& io) override;
+};
+
 class DebugOverlayDialog : public ImGuiDialog {
  public:
   using FrameStatsProvider = std::function<FrameStats()>;
