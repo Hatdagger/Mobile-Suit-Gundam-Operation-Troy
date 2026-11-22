@@ -236,6 +236,14 @@ class DxbcShaderTranslator : public ShaderTranslator {
     // taking into account the potential relation with occlusion queries (but
     // should be safe at least temporarily).
     kSysFlag_ROVDepthStencilEarlyWrite_Shift,
+    // RTV path only: the color render target is 7e3 (k_2_10_10_10_FLOAT or
+    // k_2_10_10_10_FLOAT_AS_16_16_16_16), stored on the host as a 16-bit float
+    // render target - clamp the output to the range the Xbox 360 can store
+    // (RGB 0...31.875, alpha 0...1, NaN dropped) like the guest would.
+    kSysFlag_ClampColor0To7e3_Shift,
+    kSysFlag_ClampColor1To7e3_Shift,
+    kSysFlag_ClampColor2To7e3_Shift,
+    kSysFlag_ClampColor3To7e3_Shift,
 
     kSysFlag_Count,
 
@@ -260,6 +268,10 @@ class DxbcShaderTranslator : public ShaderTranslator {
     kSysFlag_ROVDepthWrite = 1u << kSysFlag_ROVDepthWrite_Shift,
     kSysFlag_ROVStencilTest = 1u << kSysFlag_ROVStencilTest_Shift,
     kSysFlag_ROVDepthStencilEarlyWrite = 1u << kSysFlag_ROVDepthStencilEarlyWrite_Shift,
+    kSysFlag_ClampColor0To7e3 = 1u << kSysFlag_ClampColor0To7e3_Shift,
+    kSysFlag_ClampColor1To7e3 = 1u << kSysFlag_ClampColor1To7e3_Shift,
+    kSysFlag_ClampColor2To7e3 = 1u << kSysFlag_ClampColor2To7e3_Shift,
+    kSysFlag_ClampColor3To7e3 = 1u << kSysFlag_ClampColor3To7e3_Shift,
   };
   static_assert(kSysFlag_Count <= 32, "Too many flags in the system constants");
 

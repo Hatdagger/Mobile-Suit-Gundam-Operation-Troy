@@ -1548,6 +1548,20 @@ void DxbcShaderTranslator::CompletePixelShader_WriteToRTVs() {
              LoadSystemConstant(SystemConstants::Index::kColorExpBias,
                                 offsetof(SystemConstants, color_exp_bias) + sizeof(float) * i,
                                 dxbc::Src::kXXXX));
+    // 7e3 render targets are 16-bit float on the host, which can hold values
+    // (negative, above 31.875, NaN) that the Xbox 360 would never store - an
+    // HDR scene keeping them breaks things like luminance-based exposure.
+    a_.OpAnd(dxbc::Dest::R(gamma_temp, 0b0001), LoadFlagsSystemConstant(),
+             dxbc::Src::LU(kSysFlag_ClampColor0To7e3 << i));
+    a_.OpIf(true, dxbc::Src::R(gamma_temp, dxbc::Src::kXXXX));
+    // max drops NaN (returns the non-NaN operand).
+    a_.OpMax(dxbc::Dest::R(system_temp_color), dxbc::Src::R(system_temp_color),
+             dxbc::Src::LF(0.0f));
+    a_.OpMin(dxbc::Dest::R(system_temp_color, 0b0111), dxbc::Src::R(system_temp_color),
+             dxbc::Src::LF(31.875f));
+    a_.OpMin(dxbc::Dest::R(system_temp_color, 0b1000), dxbc::Src::R(system_temp_color),
+             dxbc::Src::LF(1.0f));
+    a_.OpEndIf();
     if (gamma_render_target_as_unorm8_) {
       // Convert to gamma space - this is incorrect, since it must be done after
       // blending on the Xbox 360, but this is just one of many blending issues

@@ -44,6 +44,11 @@ REXCVAR_DEFINE_BOOL(d3d12_readback_resolve, false, "GPU/D3D12",
                     "Read render-to-texture results on the CPU")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+REXCVAR_DEFINE_BOOL(rtv_clamp_7e3, true, "GPU/D3D12",
+                    "RTV render target path: clamp pixel shader output to 7e3 (2_10_10_10_FLOAT) "
+                    "render targets to the range the Xbox 360 can store (0...31.875)")
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
                     "Submit command list when PM4 primary buffer ends")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
@@ -3716,6 +3721,16 @@ void D3D12CommandProcessor::UpdateSystemConstantValues(
     for (uint32_t i = 0; i < 4; ++i) {
       if (color_infos[i].color_format == xenos::ColorRenderTargetFormat::k_8_8_8_8_GAMMA) {
         flags |= DxbcShaderTranslator::kSysFlag_ConvertColor0ToGamma << i;
+      }
+    }
+  }
+  // 7e3 output range (RTV path only - ROV packs to 7e3 itself).
+  if (!edram_rov_used && REXCVAR_GET(rtv_clamp_7e3)) {
+    for (uint32_t i = 0; i < 4; ++i) {
+      xenos::ColorRenderTargetFormat color_format = color_infos[i].color_format;
+      if (color_format == xenos::ColorRenderTargetFormat::k_2_10_10_10_FLOAT ||
+          color_format == xenos::ColorRenderTargetFormat::k_2_10_10_10_FLOAT_AS_16_16_16_16) {
+        flags |= DxbcShaderTranslator::kSysFlag_ClampColor0To7e3 << i;
       }
     }
   }
