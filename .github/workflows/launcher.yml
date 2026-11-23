@@ -46,6 +46,10 @@ jobs:
           Stop-Process -Id $server.Id
           exit $code
 
+      - name: English patch test (.zip unpacked with Windows' tar, xdelta apply / remove / re-apply)
+        shell: pwsh
+        run: python launcher/tests/english_patch_test.py out/launcher/Release/optroy_launcher_tool.exe "$env:RUNNER_TEMP/english_patch_test"
+
       - name: Package
         shell: pwsh
         run: |
@@ -56,6 +60,7 @@ jobs:
           Copy-Item thirdparty/rexglue-sdk/thirdparty/sdl3/LICENSE.txt dist/licenses/SDL3-LICENSE.txt
           Copy-Item thirdparty/rexglue-sdk/thirdparty/imgui/LICENSE.txt dist/licenses/DearImGui-LICENSE.txt
           Copy-Item thirdparty/rexglue-sdk/thirdparty/rapidjson/license.txt dist/licenses/RapidJSON-LICENSE.txt
+          Copy-Item launcher/thirdparty/xdelta3/LICENSE dist/licenses/xdelta3-LICENSE.txt
           Copy-Item launcher/README.md dist/README-launcher.md
 
       - uses: actions/upload-artifact@v4
