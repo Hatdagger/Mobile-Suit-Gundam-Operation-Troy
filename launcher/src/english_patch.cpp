@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 
@@ -45,6 +46,19 @@ bool IsPatchFile(const fs::path& p) {
   unsigned char magic[4] = {};
   return f.read(reinterpret_cast<char*>(magic), 4) && magic[0] == 0xD6 && magic[1] == 0xC3 && magic[2] == 0xC4 &&
          magic[3] == 0x00;
+}
+
+// Windows' own tar (bsdtar) reads .zip / .7z / .rar; Git's tar on the PATH cannot, so look in
+// System32 first.
+std::string FindTar(const toolchain::Info& tools) {
+#ifdef _WIN32
+  if (const char* root = std::getenv("SystemRoot")) {
+    const fs::path tar = util::U8Path(root) / "System32" / "tar.exe";
+    if (util::IsFile(tar)) return util::PathStr(tar);
+  }
+#endif
+  if (!tools.tar.empty()) return tools.tar;
+  return proc::FindOnPath("tar", nullptr);
 }
 
 bool IsArchive(const fs::path& p) {
@@ -205,7 +219,7 @@ bool Apply(JobContext& ctx, const toolchain::Info& tools) {
     const fs::path archive = it->path();
     if (!it->is_regular_file(ec) || !IsArchive(archive) || util::IsDir(folder / archive.stem())) continue;
     Report(ctx, "Unpacking " + util::PathStr(archive.filename()), -1.f);
-    const std::string tar = tools.tar.empty() ? proc::FindOnPath("tar", nullptr) : tools.tar;
+    const std::string tar = FindTar(tools);
     if (tar.empty()) {
       ctx.error = "Unpack " + util::PathStr(archive.filename()) + " into the English Patch folder first.";
       return false;
