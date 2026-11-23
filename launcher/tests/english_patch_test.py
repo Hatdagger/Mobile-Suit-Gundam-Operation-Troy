@@ -45,6 +45,8 @@ def main():
     os.makedirs(xui)
     with open(os.path.join(game, ".optroy-extracted"), "w") as f:
         f.write("files=1\n")
+    with open(os.path.join(game, "default.xex"), "w") as f:  # placeholder text, not a real game file
+        f.write("placeholder\n")
     original = os.urandom(50000)
     with open(os.path.join(xui, "MenuTop.xzp"), "wb") as f:
         f.write(original)
