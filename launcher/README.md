@@ -97,3 +97,19 @@ Anton, Fira Sans and Anonymous Pro fonts (SIL Open Font License, see `fonts/`).
 (with `-DOPTROY_LAUNCHER_HEADLESS=ON` this works on machines without a display).
 `-DOPTROY_LAUNCHER_TOOL=ON` adds `optroy_launcher_tool`, a command-line check of
 the extractor, the game finder and the build steps.
+
+## English patch (for the Japanese copy)
+
+SETTINGS / LANGUAGE. The fan English translation is by **Eight Mansions** (Yuvi: hacking, tools,
+images, translation; SnowyAria: translation), v1.0, November 2022:
+https://github.com/Eight-Mansions/MSGOT/releases. It is not part of this project and the launcher
+never downloads it: the player downloads it and puts the .zip (or the .xdelta files) into the
+`English Patch` folder beside the launcher, then chooses "English patch".
+
+The launcher unpacks the .zip (Windows' own tar), finds the xdelta (VCDIFF) files, works out which
+extracted game file each one is for (file name, then the names inside the patch), checks every patch
+before changing anything (all or nothing), keeps the original files in
+`RecompData\english_patch_originals` (so "Remove the English patch" works), and applies it again by
+itself after the game files are extracted again. The player's own ISO / GOD folder is never changed.
+Decoder: xdelta3 (Apache License 2.0) in `thirdparty/xdelta3`.
+Test: `optroy_launcher_tool english <launcher folder> apply|remove|status|extracted`.

@@ -1,5 +1,7 @@
 #include "setup_steps.h"
 
+#include "english_patch.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -485,6 +487,8 @@ bool ExtractGame(JobContext& ctx, const fs::path& game_copy) {
     util::WriteTextFile(l.game_dir / kExtractedMarker,
                         "files=" + std::to_string(done.done_files) + "\nbytes=" + std::to_string(done.done_bytes) +
                             "\nfrom=" + util::PathStr(game_copy) + "\nwhen=" + std::to_string(util::NowUnix()) + "\n");
+    // Fresh original files: apply the English patch again if the player has it.
+    english_patch::AfterExtract(ctx, toolchain::Info{});
   }
   return true;
 }

@@ -37,6 +37,9 @@ compile_commands.json
 /*.exe
 /RecompData/
 /Saves/
+# The fan English patch the player downloads (not ours to share)
+English Patch/
+*.xdelta
 
 # Editor / OS clutter
 .vs/

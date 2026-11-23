@@ -507,7 +507,7 @@ void App::DrawSetup(float dt) {
 
 void App::DrawSettings(float dt) {
   ui::Header("SETTINGS", HeaderStatus(), false);
-  constexpr int kTabs = 3;  // GAME, PLAYER, LAUNCHER
+  constexpr int kTabs = 4;  // GAME, PLAYER, LAUNCHER, LANGUAGE
   if (Pressed(Action::PrevTab)) settings_tab_ = Wrap(settings_tab_ - 1, kTabs);
   if (Pressed(Action::NextTab)) settings_tab_ = Wrap(settings_tab_ + 1, kTabs);
   settings_tab_ = std::clamp(settings_tab_, 0, kTabs - 1);
@@ -566,6 +566,44 @@ void App::DrawSettings(float dt) {
                     "Press OK to type it with the controller or the keyboard.",
                     {}, 0, nullptr, [this] { OpenNameEntry(false); },
                     player_name_set_ ? player_name_ : std::string(player_name::kDefault) + " (default)"});
+  } else if (settings_tab_ == 3) {
+    if (!demo_ && now_ - english_status_at_ > 1.0) {
+      english_status_ = english_patch::GetStatus(layout_);
+      english_status_at_ = now_;
+    }
+    const english_patch::Status& es = english_status_;
+    const bool ready = es.patch_files > 0 || es.archives > 0;
+    std::string value = es.applied ? "ENGLISH (APPLIED)" : ready ? "READY TO APPLY" : "NOT APPLIED";
+    rows.push_back({"English patch",
+                    "For the Japanese copy of the game: the fan English translation by Eight Mansions.\n"
+                    "1. Download it (next row).\n"
+                    "2. Put the downloaded .zip in the English Patch folder (row 3). No need to unzip it.\n"
+                    "3. Come back here and press OK.\n"
+                    "Your own copy of the game is never changed.",
+                    {}, 0, nullptr, [this] { RunEnglishPatch(true); }, value});
+    rows.push_back({"Download the patch",
+                    "Opens their release page in your web browser. " + std::string(english_patch::kCredits) +
+                        " Not part of this project; the launcher never downloads it.",
+                    {}, 0, nullptr, [] { proc::OpenWithSystem(english_patch::kDownloadUrl); }, "EIGHT MANSIONS"});
+    std::string folder_value = es.archives == 1 ? std::string("DOWNLOAD FOUND")
+                               : es.archives ? std::to_string(es.archives) + " DOWNLOADS FOUND"
+                               : es.patch_files ? std::to_string(es.patch_files) + " PATCH FILES FOUND"
+                                                : "EMPTY";
+    rows.push_back({"Open the English Patch folder",
+                    "Opens the folder to put the downloaded patch in: \"English Patch\" beside this launcher.",
+                    {}, 0, nullptr,
+                    [this] {
+                      std::error_code ec;
+                      fs::create_directories(english_patch::Folder(layout_), ec);
+                      proc::OpenWithSystem(util::PathStr(english_patch::Folder(layout_)));
+                      english_status_at_ = -100;
+                    },
+                    folder_value});
+    rows.push_back({"Remove the English patch", "Puts the original Japanese game files back.", {}, 0, nullptr,
+                    [this] {
+                      if (english_status_.applied) RunEnglishPatch(false);
+                      else Toast("The English patch is not applied");
+                    }});
   } else {
     rows.push_back({"Launcher fullscreen", "Show this launcher fullscreen (F11 switches too).", {"ON", "OFF"},
                     settings_.GetBool("fullscreen", false) ? 0 : 1, [this](int i) { SetFullscreen(i == 0); }});
@@ -603,7 +641,7 @@ void App::DrawSettings(float dt) {
   if (Pressed(Action::Down)) sel = Wrap(sel + 1, n);
 
   // Tabs
-  const char* tabs[kTabs] = {"GAME", "PLAYER", "LAUNCHER"};
+  const char* tabs[kTabs] = {"GAME", "PLAYER", "LAUNCHER", "LANGUAGE"};
   const float tx = 108, ty = 122;
   ui::ButtonGlyph(Button::PrevTab, 64, ty + 20, 26);
   float tab_x = tx;
@@ -1461,7 +1499,7 @@ void App::DrawToast() {
 
 // --- Screenshot scenes -------------------------------------------------------------
 
-int App::DemoCount() { return 17; }
+int App::DemoCount() { return 18; }
 
 const char* App::DemoName(int index) {
   static const char* kNames[] = {"01_main_menu",       "02_setup_first_run", "03_setup_building",
@@ -1469,7 +1507,7 @@ const char* App::DemoName(int index) {
                                  "07_build_log",       "08_install_tools",   "09_setup_error",
                                  "10_player_name",     "11_player_name_keyboard", "12_settings_player",
                                  "13_ask_name_first_play", "14_online_menu", "15_lan_host",
-                                 "16_lan_join",        "17_lan_address"};
+                                 "16_lan_join",        "17_lan_address",     "18_settings_language"};
   return kNames[std::clamp(index, 0, DemoCount() - 1)];
 }
 
@@ -1672,6 +1710,13 @@ void App::LoadDemo(int index) {
       screen_ = Screen::Address;
       addr_digits_ = "100071012005";
       addr_cursor_ = 8;
+      break;
+    case 17:
+      screen_ = Screen::Settings;
+      settings_tab_ = 3;
+      settings_sel_[3] = 0;
+      english_status_ = {};
+      english_status_.archives = 1;
       break;
     default:
       break;

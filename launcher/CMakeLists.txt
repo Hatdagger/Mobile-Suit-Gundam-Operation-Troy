@@ -76,6 +76,20 @@ optroy_embed_files("${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/fonts/FiraSans-SemiBold.ttf"
     "${CMAKE_CURRENT_SOURCE_DIR}/fonts/AnonymousPro-Regular.ttf")
 
+# --- xdelta3 decoder (Apache License 2.0), for the English patch the player downloads --
+add_library(launcher_xdelta3 STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/xdelta3/xdelta3.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/xdelta3/optroy_xd3.c")
+target_include_directories(launcher_xdelta3 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/xdelta3")
+target_compile_definitions(launcher_xdelta3 PRIVATE XD3_MAIN=0 XD3_ENCODER=1 XD3_DEBUG=0 SECONDARY_DJW=1
+                           SECONDARY_FGK=1 SECONDARY_LZMA=0 XD3_USE_LARGEFILE64=1 SIZEOF_SIZE_T=8
+                           SIZEOF_UNSIGNED_LONG_LONG=8)
+if(MSVC)
+    target_compile_options(launcher_xdelta3 PRIVATE /W0)
+else()
+    target_compile_options(launcher_xdelta3 PRIVATE -w)
+endif()
+
 # --- The launcher -----------------------------------------------------------------
 add_executable(optroy_launcher WIN32
     src/main.cpp
@@ -93,9 +107,10 @@ add_executable(optroy_launcher WIN32
     src/net_util.cpp
     src/lan_discovery.cpp
     src/lobby_server.cpp
+    src/english_patch.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
 set_target_properties(optroy_launcher PROPERTIES OUTPUT_NAME "Operation Troy")
-target_link_libraries(optroy_launcher PRIVATE launcher_imgui SDL3::SDL3-static)
+target_link_libraries(optroy_launcher PRIVATE launcher_imgui SDL3::SDL3-static launcher_xdelta3)
 target_include_directories(optroy_launcher SYSTEM PRIVATE "${OPTROY_THIRDPARTY}/rapidjson/include")
 target_compile_definitions(optroy_launcher PRIVATE
     OPTROY_LAUNCHER_VERSION="${PROJECT_VERSION}"
@@ -118,7 +133,7 @@ endif()
 if(OPTROY_LAUNCHER_TOOL)
     add_executable(optroy_launcher_tool tests/tool.cpp src/util.cpp src/subprocess.cpp src/gdf.cpp src/game_finder.cpp
                    src/toolchain.cpp src/setup_steps.cpp src/game_config.cpp src/player_name.cpp
-                   src/net_util.cpp src/lan_discovery.cpp src/lobby_server.cpp
+                   src/net_util.cpp src/lan_discovery.cpp src/lobby_server.cpp src/english_patch.cpp
                    "${CMAKE_CURRENT_BINARY_DIR}/embedded_files.cpp")
     target_include_directories(optroy_launcher_tool PRIVATE src)
     target_include_directories(optroy_launcher_tool SYSTEM PRIVATE "${OPTROY_THIRDPARTY}/rapidjson/include")
@@ -132,5 +147,5 @@ if(OPTROY_LAUNCHER_TOOL)
     endif()
     target_compile_definitions(optroy_launcher_tool PRIVATE OPTROY_REPO_OWNER="Hatdagger"
                                OPTROY_REPO_NAME="Mobile-Suit-Gundam-Operation-Troy")
-    target_link_libraries(optroy_launcher_tool PRIVATE SDL3::SDL3-static)
+    target_link_libraries(optroy_launcher_tool PRIVATE SDL3::SDL3-static launcher_xdelta3)
 endif()

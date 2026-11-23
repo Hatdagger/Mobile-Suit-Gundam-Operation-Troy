@@ -715,6 +715,30 @@ void App::RunBuild(bool confirm) {
   Go(Screen::Setup);
 }
 
+void App::RunEnglishPatch(bool apply) {
+  if (JobRunning()) return;
+  if (!files_ready_) {
+    Toast("Set up the game first");
+    return;
+  }
+  toolchain::Info tools = tools_;
+  StartJob(
+      apply ? "ENGLISH PATCH" : "REMOVE ENGLISH PATCH",
+      [apply, tools](JobContext& ctx, Job& job) {
+        {
+          std::lock_guard lock(job.mu);
+          job.row = Row::Files;
+          job.step_index = job.step_count = 1;
+        }
+        return apply ? english_patch::Apply(ctx, tools) : english_patch::Remove(ctx);
+      },
+      [this, apply](bool ok) {
+        english_status_at_ = -100;
+        if (ok) Toast(apply ? "English patch applied" : "English patch removed");
+      });
+  Go(Screen::Setup);
+}
+
 void App::RunExtract(bool confirm) {
   if (JobRunning()) return;
   if (!game_found_) {

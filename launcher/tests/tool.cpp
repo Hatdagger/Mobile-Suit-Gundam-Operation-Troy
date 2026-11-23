@@ -4,6 +4,8 @@
 //   optroy_launcher_tool run <program> [args...]
 //   optroy_launcher_tool tools
 //   optroy_launcher_tool name <settings .toml> <text>   (types <text> key by key, saves it as the player name)
+//   optroy_launcher_tool english <launcher folder> apply|remove|status|extracted
+//       (English patch from "<launcher folder>/English Patch"; "extracted" = what happens after extracting)
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -11,6 +13,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "english_patch.h"
 #include "game_config.h"
 #include "game_finder.h"
 #include "lan_discovery.h"
@@ -90,6 +93,26 @@ int main(int argc, char** argv) {
                          nullptr, &err);
     std::printf("exit=%d err=%s\n", code, err.c_str());
     return 0;
+  }
+  if (cmd == "english" && argc == 4) {
+    util::Log log;
+    std::atomic<bool> cancel{false};
+    JobContext ctx;
+    ctx.layout = DetectLayout(util::U8Path(argv[2]));
+    ctx.log = &log;
+    ctx.cancel = &cancel;
+    ctx.stage = [](const std::string& s) { std::printf("stage: %s\n", s.c_str()); };
+    const std::string what = argv[3];
+    bool ok = true;
+    if (what == "apply") ok = english_patch::Apply(ctx, toolchain::Info{});
+    else if (what == "remove") ok = english_patch::Remove(ctx);
+    else if (what == "extracted") ok = english_patch::AfterExtract(ctx, toolchain::Info{});
+    for (const std::string& line : log.Range(0, log.Count())) std::printf("log: %s\n", line.c_str());
+    for (const std::string& line : ctx.error_lines) std::printf("problem: %s\n", line.c_str());
+    const english_patch::Status s = english_patch::GetStatus(ctx.layout);
+    std::printf("ok=%d error=%s patches=%zu archives=%zu applied=%d files=%zu\n", ok, ctx.error.c_str(),
+                s.patch_files, s.archives, s.applied, s.applied_files);
+    return ok ? 0 : 1;
   }
   if (cmd == "build" && argc == 3) {
     util::Log log;

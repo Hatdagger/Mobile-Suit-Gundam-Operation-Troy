@@ -12,6 +12,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "english_patch.h"
 #include "game_config.h"
 #include "game_finder.h"
 #include "lan_discovery.h"
@@ -128,6 +129,7 @@ class App {
   void StartSetupJob(bool install_tools);
   void RunBuild(bool confirm);
   void RunExtract(bool confirm);
+  void RunEnglishPatch(bool apply);
   void RunUpdate();
   void ConfirmInstallTools(std::function<void()> then);
   void Play();  // starts the game in play_mode_ (set by StartPlay)
@@ -238,7 +240,9 @@ class App {
   int main_sel_ = 0;
   int setup_sel_ = 0;
   int settings_tab_ = 0;
-  int settings_sel_[3] = {0, 0, 0};
+  int settings_sel_[4] = {0, 0, 0, 0};
+  english_patch::Status english_status_;  // refreshed about once a second on the LANGUAGE tab
+  double english_status_at_ = -100;
   float anim_main_ = 0, anim_setup_ = 0, anim_settings_ = 0;
   float screen_fade_ = 1.f;
   double log_scroll_ = 0;
